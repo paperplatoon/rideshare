@@ -1,0 +1,528 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #101316;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+}
+
+#ui-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: #f5f7f8;
+}
+
+.performance-monitor {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #9dffad;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 12, 15, 0.72);
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.panel {
+  width: min(420px, calc(100vw - 32px));
+  padding: 28px;
+  background: rgba(20, 25, 29, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.panel h1 {
+  margin: 0 0 14px;
+  font-size: 34px;
+  letter-spacing: 0;
+}
+
+.panel p {
+  margin: 8px 0;
+  line-height: 1.45;
+  color: #d9e1e5;
+}
+
+.pause-screen {
+  background: rgba(8, 12, 15, 0.55);
+}
+
+button {
+  margin-top: 18px;
+  border: 0;
+  border-radius: 6px;
+  padding: 12px 18px;
+  background: #f2c14e;
+  color: #151515;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #ffd665;
+}
+
+button:disabled {
+  cursor: default;
+  background: #d6dde0;
+  color: #4a5358;
+}
+
+.hud {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  min-width: 190px;
+  background: rgba(8, 12, 15, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px #000;
+  z-index: 5;
+}
+
+.speedometer {
+  margin: 4px 0;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+.speedometer.warning {
+  background: rgba(192, 38, 38, 0.88);
+  border-color: rgba(255, 210, 210, 0.72);
+}
+
+.fuel-meter {
+  margin: 4px 0;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  transform-origin: left center;
+}
+
+.damage-meter {
+  margin: 4px 0;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+.fuel-meter.low {
+  animation: fuelPulse 0.7s ease-in-out infinite;
+  background: rgba(185, 28, 28, 0.86);
+  border-color: rgba(255, 210, 210, 0.82);
+}
+
+.damage-meter.damaged {
+  background: rgba(127, 29, 29, 0.72);
+  border-color: rgba(255, 166, 166, 0.5);
+}
+
+.fuel-label,
+.damage-label {
+  margin-bottom: 5px;
+}
+
+.fuel-track,
+.damage-track {
+  height: 9px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.38);
+  border-radius: 999px;
+}
+
+.fuel-fill,
+.damage-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.fuel-fill {
+  background: #24d16f;
+}
+
+.damage-fill {
+  background: #ef4444;
+}
+
+.fuel-meter.low .fuel-fill {
+  background: #ffdf5d;
+}
+
+.refuel-status {
+  color: #75f0b0;
+}
+
+.refuel-overlay,
+.repair-overlay {
+  position: absolute;
+  left: calc(50% - 150px);
+  bottom: 34px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  z-index: 12;
+}
+
+.repair-overlay {
+  left: calc(50% + 150px);
+}
+
+.refuel-panel,
+.repair-panel {
+  width: min(280px, calc(100vw - 32px));
+  padding: 14px;
+  background: rgba(12, 17, 19, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+  text-align: center;
+}
+
+.refuel-title,
+.repair-title {
+  color: #d8eef0;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.refuel-button,
+.repair-button {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  margin-top: 10px;
+  isolation: isolate;
+}
+
+.refuel-button::before,
+.repair-button::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+}
+
+.refuel-button::before {
+  width: var(--fuel-percent, 0%);
+  background: rgba(36, 209, 111, 0.42);
+}
+
+.repair-button::before {
+  width: var(--damage-percent, 0%);
+  background: rgba(239, 68, 68, 0.36);
+}
+
+.refuel-button.held,
+.repair-button.held {
+  background: #75f0b0;
+}
+
+@keyframes fuelPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+.objective {
+  color: #f2c14e;
+}
+
+.indicator {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  min-width: 126px;
+  justify-content: center;
+  background: rgba(8, 12, 15, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px #000;
+  z-index: 5;
+}
+
+.arrow {
+  display: inline-block;
+  font-size: 31px;
+  line-height: 1;
+  transform-origin: 50% 50%;
+}
+
+.phone-overlay {
+  position: absolute;
+  inset: 30px;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  background: rgba(6, 9, 11, 0.64);
+  z-index: 15;
+}
+
+.map-overlay {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  width: min(560px, calc(100vw - 56px));
+  pointer-events: none;
+  z-index: 14;
+}
+
+.phone-panel,
+.map-panel {
+  width: min(760px, calc(100vw - 64px));
+  max-height: calc(100vh - 72px);
+  overflow: auto;
+  padding: 24px;
+  background: rgba(18, 23, 27, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+}
+
+.map-panel {
+  width: auto;
+  max-height: none;
+  padding: 16px;
+}
+
+.phone-title,
+.map-title {
+  margin-bottom: 18px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.map-title {
+  margin-bottom: 10px;
+  font-size: 20px;
+}
+
+.map-canvas {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 9%, rgba(255, 255, 255, 0.18) 9% 11%, transparent 11% 20%),
+    repeating-linear-gradient(0deg, transparent 0 9%, rgba(255, 255, 255, 0.18) 9% 11%, transparent 11% 20%),
+    #253039;
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+}
+
+.map-marker,
+.map-player {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 0 16px rgba(255, 255, 255, 0.22);
+}
+
+.map-player {
+  color: #151515;
+  background: #ffffff;
+  border-radius: 5px;
+  font-size: 18px;
+}
+
+.map-marker.gas {
+  color: #052015;
+  background: #2cff95;
+}
+
+.map-marker.repair {
+  color: #160704;
+  background: #ff8a3d;
+}
+
+.map-marker.pickup {
+  color: #151515;
+  background: #f2c14e;
+}
+
+.map-marker.dropoff {
+  color: #06160b;
+  background: #65ff77;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+  color: #dbe5e8;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-legend b {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.legend-player {
+  background: #ffffff;
+}
+
+.legend-gas {
+  background: #2cff95;
+}
+
+.legend-repair {
+  background: #ff8a3d;
+}
+
+.legend-pickup {
+  background: #f2c14e;
+}
+
+.legend-dropoff {
+  background: #65ff77;
+}
+
+.offer-list {
+  display: grid;
+  gap: 14px;
+}
+
+.offer-card,
+.current-ride-card {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.current-ride-card {
+  grid-template-columns: 1fr;
+  font-size: 20px;
+}
+
+.ride-name {
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.ride-type {
+  margin-top: 3px;
+  color: #f2c14e;
+  font-weight: 800;
+}
+
+.ride-tier {
+  margin-top: 3px;
+  color: #9fd3ff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.ride-details {
+  display: grid;
+  gap: 4px;
+  color: #e2e8ea;
+}
+
+.expires {
+  color: #9fb2ba;
+}
+
+.expires.urgent,
+.collision-flash {
+  color: #ff8a8a;
+}
+
+.phone-close-hint {
+  margin-top: 18px;
+  text-align: right;
+  color: #9fb2ba;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.phone-current-score {
+  color: #f2c14e;
+  font-weight: 900;
+}
+
+.ride-result {
+  position: absolute;
+  top: 170px;
+  left: 18px;
+  width: 230px;
+  padding: 12px 14px;
+  background: rgba(8, 12, 15, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+  z-index: 6;
+}
+
+.ride-result-title {
+  color: #f2c14e;
+}
+
+.hidden {
+  display: none;
+}

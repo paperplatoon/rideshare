@@ -1,0 +1,96 @@
+import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
+
+export enum GameState {
+  Start = "START",
+  Playing = "PLAYING",
+  Paused = "PAUSED",
+}
+
+export interface DeliveryPoint {
+  position: Vector3;
+  roadId: string;
+}
+
+export interface GasStation {
+  position: Vector3;
+  radius: number;
+}
+
+export interface AutoBodyShop {
+  position: Vector3;
+  radius: number;
+}
+
+export interface TrafficCollisionInfo {
+  ridePenaltyMph: number;
+  damagePercent: number;
+}
+
+export interface CircleCollider {
+  x: number;
+  z: number;
+  radius: number;
+}
+
+export interface BoxCollider {
+  x: number;
+  z: number;
+  halfX: number;
+  halfZ: number;
+}
+
+export interface RoadNode {
+  position: Vector3;
+  ix: number;
+  iz: number;
+}
+
+export interface TrafficWaypoint {
+  position: Vector3;
+  ix: number;
+  iz: number;
+}
+
+export interface RoadSurfaceInfo {
+  roadPositionsX: number[];
+  roadPositionsZ: number[];
+  roadHalfWidth: number;
+  sidewalkOuterHalfWidth: number;
+}
+
+export enum PassengerType {
+  Normal = "NORMAL",
+  ScaredyCat = "SCAREDY-CAT",
+  SpeedDemon = "SPEED DEMON",
+}
+
+export enum RideState {
+  Idle = "IDLE",
+  DrivingToPickup = "DRIVING_TO_PICKUP",
+  PassengerOnboard = "PASSENGER_ONBOARD",
+}
+
+export type RideTier = "SHORT" | "MEDIUM" | "LONG";
+
+export interface RideOffer {
+  id: string;
+  tier: RideTier;
+  passengerName: string;
+  passengerType: PassengerType;
+  pickupPoint: DeliveryPoint;
+  destinationPoint: DeliveryPoint;
+  pickupDistance: number;
+  tripDistance: number;
+  fareMultiplier: number;
+  baseFare: number;
+  ageSeconds: number;
+}
+
+export interface RideResult {
+  passengerName: string;
+  passengerType: PassengerType;
+  stars: number;
+  baseFare: number;
+  tip: number;
+  total: number;
+}
