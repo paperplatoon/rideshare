@@ -100,25 +100,25 @@ export class PlayerCar {
     wheelMat.diffuseColor = new Color3(0.04, 0.04, 0.04);
     wheelMat.specularColor = Color3.Black();
 
-    const body = MeshBuilder.CreateBox("player-body", { width: 3.1, height: 1.1, depth: 5.8 }, this.scene);
+    const body = MeshBuilder.CreateBox("player-body", { width: this.config.width, height: 1.6, depth: this.config.length }, this.scene);
     body.position.y = 0;
     body.material = bodyMat;
     body.parent = this.root;
 
-    const cabin = MeshBuilder.CreateBox("player-cabin", { width: 2.3, height: 0.9, depth: 2.1 }, this.scene);
-    cabin.position.set(0, 0.9, -0.35);
+    const cabin = MeshBuilder.CreateBox("player-cabin", { width: 4.2, height: 1.15, depth: 3.6 }, this.scene);
+    cabin.position.set(0, 1.18, -0.55);
     cabin.material = cabinMat;
     cabin.parent = this.root;
 
-    const nose = MeshBuilder.CreateBox("player-front", { width: 1.2, height: 0.2, depth: 0.25 }, this.scene);
-    nose.position.set(0, 0.25, 3.05);
+    const nose = MeshBuilder.CreateBox("player-front", { width: 2.1, height: 0.3, depth: 0.42 }, this.scene);
+    nose.position.set(0, 0.35, this.config.length / 2 + 0.12);
     nose.material = cabinMat;
     nose.parent = this.root;
 
-    for (const x of [-1.75, 1.75]) {
-      for (const z of [-1.8, 1.8]) {
-        const wheel = MeshBuilder.CreateBox(`player-wheel-${x}-${z}`, { width: 0.45, height: 0.7, depth: 1 }, this.scene);
-        wheel.position.set(x, -0.25, z);
+    for (const x of [-3.05, 3.05]) {
+      for (const z of [-3.4, 3.4]) {
+        const wheel = MeshBuilder.CreateBox(`player-wheel-${x}-${z}`, { width: 0.75, height: 1.05, depth: 1.45 }, this.scene);
+        wheel.position.set(x, -0.34, z);
         wheel.material = wheelMat;
         wheel.parent = this.root;
       }

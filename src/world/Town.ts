@@ -79,15 +79,36 @@ export class TownGenerator {
         sidewalk.material = this.materials.sidewalk;
         meshes.push(sidewalk);
 
-        const buildingCount = 2 + Math.floor(this.rng() * 3);
-        for (let i = 0; i < buildingCount; i++) {
-          const width = 17 + this.rng() * 18;
-          const depth = 17 + this.rng() * 18;
-          const halfAvailable = blockSize / 2 - sidewalkWidth - 10;
-          const x = centerX + (this.rng() * 2 - 1) * halfAvailable * 0.66;
-          const z = centerZ + (this.rng() * 2 - 1) * halfAvailable * 0.66;
-          const height = 10 + this.rng() * 34;
-          const building = MeshBuilder.CreateBox(`building-${bx}-${bz}-${i}`, { width, height, depth }, this.scene);
+        const lotsPerSide = Math.max(3, Math.floor(blockSize / 55));
+        const buildableSize = blockSize - sidewalkWidth * 2 - 14;
+        const lotSize = buildableSize / lotsPerSide;
+        let buildingIndex = 0;
+        for (let lotX = 0; lotX < lotsPerSide; lotX++) {
+          for (let lotZ = 0; lotZ < lotsPerSide; lotZ++) {
+            if (this.rng() < 0.16) continue;
+            const width = lotSize * (0.46 + this.rng() * 0.28);
+            const depth = lotSize * (0.46 + this.rng() * 0.28);
+            const lotCenterX = centerX - buildableSize / 2 + lotSize * (lotX + 0.5);
+            const lotCenterZ = centerZ - buildableSize / 2 + lotSize * (lotZ + 0.5);
+            const jitter = lotSize * 0.11;
+            const x = lotCenterX + (this.rng() * 2 - 1) * jitter;
+            const z = lotCenterZ + (this.rng() * 2 - 1) * jitter;
+            const height = 10 + this.rng() * 34;
+            const building = MeshBuilder.CreateBox(`building-${bx}-${bz}-${buildingIndex++}`, { width, height, depth }, this.scene);
+            building.position.set(x, height / 2, z);
+            building.material = this.pickBuildingMaterial();
+            meshes.push(building);
+            staticColliders.push({ x, z, halfX: width / 2 - 0.6, halfZ: depth / 2 - 0.6 });
+          }
+        }
+
+        if (buildingIndex === 0) {
+          const width = lotSize * 0.62;
+          const depth = lotSize * 0.62;
+          const height = 18;
+          const x = centerX;
+          const z = centerZ;
+          const building = MeshBuilder.CreateBox(`building-${bx}-${bz}-${buildingIndex}`, { width, height, depth }, this.scene);
           building.position.set(x, height / 2, z);
           building.material = this.pickBuildingMaterial();
           meshes.push(building);
@@ -211,7 +232,7 @@ export class TownGenerator {
   ): GasStation[] {
     const stations: GasStation[] = [];
     const candidates: Vector3[] = [];
-    const offset = this.config.roadWidth * 0.45;
+    const offset = this.config.roadWidth / 2 + this.config.sidewalkWidth + 12;
 
     for (let ix = 1; ix < roadPositionsX.length - 1; ix += 3) {
       for (let iz = 1; iz < roadPositionsZ.length - 1; iz += 3) {
@@ -277,7 +298,7 @@ export class TownGenerator {
   ): AutoBodyShop[] {
     const shops: AutoBodyShop[] = [];
     const candidates: Vector3[] = [];
-    const offset = this.config.roadWidth * 0.45;
+    const offset = this.config.roadWidth / 2 + this.config.sidewalkWidth + 12;
 
     for (let ix = 2; ix < roadPositionsX.length - 1; ix += 4) {
       for (let iz = 2; iz < roadPositionsZ.length - 1; iz += 4) {

@@ -1,6 +1,7 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it } from "vitest";
+import { GAME_CONFIG } from "../game/config";
 import { PlayerCar } from "../player/PlayerCar";
 import { TownGenerator } from "../world/Town";
 import { TrafficManager } from "./TrafficManager";
@@ -31,7 +32,7 @@ describe("TrafficManager", () => {
       traffic.cars[0].mesh.position.x - player.root.position.x,
       traffic.cars[0].mesh.position.z - player.root.position.z,
     );
-    expect(recycledDistance).toBeLessThanOrEqual(700);
+    expect(recycledDistance).toBeLessThanOrEqual(GAME_CONFIG.traffic.respawnMaxRadius);
     traffic.dispose();
     scene.dispose();
     engine.dispose();

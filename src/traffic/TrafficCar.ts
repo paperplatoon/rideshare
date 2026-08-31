@@ -80,7 +80,7 @@ export class TrafficCar {
     this.direction = direction;
     this.target = this.nextWaypoint();
     Vector3.LerpToRef(waypoint.position, this.target.position, progress, this.mesh.position);
-    this.mesh.position.y = 0.75;
+    this.mesh.position.y = 1;
     this.velocityX = 0;
     this.velocityZ = 0;
     this.faceTarget();
@@ -91,10 +91,10 @@ export class TrafficCar {
   }
 
   static createPrototype(scene: import("@babylonjs/core/scene").Scene, material: StandardMaterial, index: number): Mesh {
-    const body = MeshBuilder.CreateBox(`traffic-body-source-${index}`, { width: 2.8, height: 1, depth: 5 }, scene);
+    const body = MeshBuilder.CreateBox(`traffic-body-source-${index}`, { width: 5.4, height: 1.5, depth: 9.4 }, scene);
     body.material = material;
-    const cabin = MeshBuilder.CreateBox(`traffic-cabin-source-${index}`, { width: 2, height: 0.75, depth: 1.9 }, scene);
-    cabin.position.set(0, 0.75, -0.2);
+    const cabin = MeshBuilder.CreateBox(`traffic-cabin-source-${index}`, { width: 3.8, height: 1.05, depth: 3.3 }, scene);
+    cabin.position.set(0, 1.05, -0.35);
     cabin.material = material;
     const prototype = Mesh.MergeMeshes([body, cabin], true, true, undefined, false, false)!;
     prototype.name = `traffic-source-${index}`;
@@ -130,7 +130,7 @@ export class TrafficCar {
     ix = Math.max(0, Math.min(this.roadPositionsX.length - 1, ix));
     iz = Math.max(0, Math.min(this.roadPositionsZ.length - 1, iz));
     return {
-      position: new Vector3(this.roadPositionsX[ix], 0.75, this.roadPositionsZ[iz]),
+      position: new Vector3(this.roadPositionsX[ix], 1, this.roadPositionsZ[iz]),
       ix,
       iz,
     };
