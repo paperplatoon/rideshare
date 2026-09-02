@@ -17,6 +17,7 @@ export interface Town {
   deliveryPoints: DeliveryPoint[];
   gasStations: GasStation[];
   autoBodyShops: AutoBodyShop[];
+  legalDrivingAreas: BoxCollider[];
   minX: number;
   maxX: number;
   minZ: number;
@@ -64,6 +65,8 @@ export class TownGenerator {
       meshes.push(road);
     }
 
+    this.createRoadMarkings(roadPositionsX, roadPositionsZ, meshes);
+
     for (let bx = 0; bx < blocksX; bx++) {
       for (let bz = 0; bz < blocksZ; bz++) {
         const leftRoad = roadPositionsX[bx];
@@ -79,21 +82,23 @@ export class TownGenerator {
         sidewalk.material = this.materials.sidewalk;
         meshes.push(sidewalk);
 
-        const lotsPerSide = Math.max(3, Math.floor(blockSize / 55));
-        const buildableSize = blockSize - sidewalkWidth * 2 - 14;
+        const buildingConfig = this.config.buildings;
+        const lotsPerSide = Math.max(buildingConfig.minLotsPerSide, Math.floor(blockSize / buildingConfig.lotTargetSize));
+        const buildableSize = blockSize - sidewalkWidth * 2 - buildingConfig.buildableInset;
         const lotSize = buildableSize / lotsPerSide;
         let buildingIndex = 0;
         for (let lotX = 0; lotX < lotsPerSide; lotX++) {
           for (let lotZ = 0; lotZ < lotsPerSide; lotZ++) {
-            if (this.rng() < 0.16) continue;
-            const width = lotSize * (0.46 + this.rng() * 0.28);
-            const depth = lotSize * (0.46 + this.rng() * 0.28);
+            if (this.rng() < buildingConfig.emptyLotChance) continue;
+            const lotCoverageRange = buildingConfig.maxLotCoverage - buildingConfig.minLotCoverage;
+            const width = lotSize * (buildingConfig.minLotCoverage + this.rng() * lotCoverageRange);
+            const depth = lotSize * (buildingConfig.minLotCoverage + this.rng() * lotCoverageRange);
             const lotCenterX = centerX - buildableSize / 2 + lotSize * (lotX + 0.5);
             const lotCenterZ = centerZ - buildableSize / 2 + lotSize * (lotZ + 0.5);
-            const jitter = lotSize * 0.11;
+            const jitter = lotSize * buildingConfig.lotJitter;
             const x = lotCenterX + (this.rng() * 2 - 1) * jitter;
             const z = lotCenterZ + (this.rng() * 2 - 1) * jitter;
-            const height = 10 + this.rng() * 34;
+            const height = buildingConfig.minHeight + this.rng() * (buildingConfig.maxHeight - buildingConfig.minHeight);
             const building = MeshBuilder.CreateBox(`building-${bx}-${bz}-${buildingIndex++}`, { width, height, depth }, this.scene);
             building.position.set(x, height / 2, z);
             building.material = this.pickBuildingMaterial();
@@ -103,9 +108,9 @@ export class TownGenerator {
         }
 
         if (buildingIndex === 0) {
-          const width = lotSize * 0.62;
-          const depth = lotSize * 0.62;
-          const height = 18;
+          const width = lotSize * buildingConfig.fallbackCoverage;
+          const depth = lotSize * buildingConfig.fallbackCoverage;
+          const height = buildingConfig.fallbackHeight;
           const x = centerX;
           const z = centerZ;
           const building = MeshBuilder.CreateBox(`building-${bx}-${bz}-${buildingIndex}`, { width, height, depth }, this.scene);
@@ -122,6 +127,7 @@ export class TownGenerator {
     const deliveryPoints = this.createDeliveryPoints(roadPositionsX, roadPositionsZ);
     const gasStations = this.createGasStations(roadPositionsX, roadPositionsZ, meshes, staticColliders);
     const autoBodyShops = this.createAutoBodyShops(roadPositionsX, roadPositionsZ, meshes, staticColliders);
+    const legalDrivingAreas = this.createLegalDrivingAreas(gasStations, autoBodyShops);
     const optimizedMeshes = this.optimizeStaticMeshes(meshes, minX, minZ);
 
     return {
@@ -133,6 +139,7 @@ export class TownGenerator {
       deliveryPoints,
       gasStations,
       autoBodyShops,
+      legalDrivingAreas,
       minX,
       maxX,
       minZ,
@@ -143,6 +150,7 @@ export class TownGenerator {
   private createMaterials(): void {
     this.materials.ground = this.material("ground-mat", new Color3(0.28, 0.36, 0.3));
     this.materials.road = this.material("road-mat", new Color3(0.13, 0.14, 0.15));
+    this.materials.centerLine = this.material("center-line-mat", new Color3(0.96, 0.72, 0.08));
     this.materials.sidewalk = this.material("sidewalk-mat", new Color3(0.48, 0.5, 0.49));
     this.materials.buildingA = this.material("building-a-mat", new Color3(0.48, 0.46, 0.43));
     this.materials.buildingB = this.material("building-b-mat", new Color3(0.38, 0.43, 0.49));
@@ -166,6 +174,75 @@ export class TownGenerator {
   private pickBuildingMaterial(): StandardMaterial {
     const options = [this.materials.buildingA, this.materials.buildingB, this.materials.buildingC];
     return options[Math.floor(this.rng() * options.length)];
+  }
+
+  private createRoadMarkings(roadPositionsX: number[], roadPositionsZ: number[], meshes: Mesh[]): void {
+    const marking = this.config.roadMarkings;
+    const lineOffset = marking.lineGap / 2 + marking.lineWidth / 2;
+    const segmentInset = this.config.roadWidth / 2 + marking.intersectionBuffer;
+    const lines: Mesh[] = [];
+
+    for (const x of roadPositionsX) {
+      for (let iz = 0; iz < roadPositionsZ.length - 1; iz++) {
+        const start = roadPositionsZ[iz] + segmentInset;
+        const end = roadPositionsZ[iz + 1] - segmentInset;
+        const length = end - start;
+        if (length <= 0) continue;
+        for (const offset of [-lineOffset, lineOffset]) {
+          const line = MeshBuilder.CreateBox(`center-line-ns-${x}-${iz}-${offset}`, {
+            width: marking.lineWidth,
+            height: marking.height,
+            depth: length,
+          }, this.scene);
+          line.position.set(x + offset, 0.1, (start + end) / 2);
+          line.material = this.materials.centerLine;
+          lines.push(line);
+        }
+      }
+    }
+
+    for (const z of roadPositionsZ) {
+      for (let ix = 0; ix < roadPositionsX.length - 1; ix++) {
+        const start = roadPositionsX[ix] + segmentInset;
+        const end = roadPositionsX[ix + 1] - segmentInset;
+        const length = end - start;
+        if (length <= 0) continue;
+        for (const offset of [-lineOffset, lineOffset]) {
+          const line = MeshBuilder.CreateBox(`center-line-ew-${z}-${ix}-${offset}`, {
+            width: length,
+            height: marking.height,
+            depth: marking.lineWidth,
+          }, this.scene);
+          line.position.set((start + end) / 2, 0.11, z + offset);
+          line.material = this.materials.centerLine;
+          lines.push(line);
+        }
+      }
+    }
+
+    const merged = Mesh.MergeMeshes(lines, true, true, undefined, false, false);
+    if (merged) {
+      merged.name = "center-lines";
+      meshes.push(merged);
+    }
+  }
+
+  private createLegalDrivingAreas(gasStations: GasStation[], shops: AutoBodyShop[]): BoxCollider[] {
+    const padding = GAME_CONFIG.drivingRules.serviceAreaPadding;
+    return [
+      ...gasStations.map((station) => ({
+        x: station.position.x,
+        z: station.position.z,
+        halfX: 14 + padding,
+        halfZ: 14 + padding,
+      })),
+      ...shops.map((shop) => ({
+        x: shop.position.x,
+        z: shop.position.z,
+        halfX: 15 + padding,
+        halfZ: 15 + padding,
+      })),
+    ];
   }
 
   private createBoundaries(minX: number, maxX: number, minZ: number, maxZ: number, meshes: Mesh[]): BoxCollider[] {

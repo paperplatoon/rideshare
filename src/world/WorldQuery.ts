@@ -1,4 +1,5 @@
-import type { BoxCollider } from "../game/types";
+import { GAME_CONFIG } from "../game/config";
+import type { BoxCollider, RoadContext } from "../game/types";
 
 export class WorldQuery {
   lastCollisionCandidateCount = 0;
@@ -16,6 +17,7 @@ export class WorldQuery {
     private readonly roadHalfWidth: number,
     private readonly sidewalkOuterHalfWidth: number,
     private readonly cellSize: number,
+    private readonly legalDrivingAreas: BoxCollider[] = [],
   ) {
     this.roadSpacingX = roadPositionsX.length > 1 ? roadPositionsX[1] - roadPositionsX[0] : 1;
     this.roadSpacingZ = roadPositionsZ.length > 1 ? roadPositionsZ[1] - roadPositionsZ[0] : 1;
@@ -49,6 +51,57 @@ export class WorldQuery {
     return !onRoad && onSidewalk;
   }
 
+  isOnPavedRoad(x: number, z: number): boolean {
+    const nearRoadX = this.nearestRoadDistance(x, this.roadPositionsX, this.roadSpacingX);
+    const nearRoadZ = this.nearestRoadDistance(z, this.roadPositionsZ, this.roadSpacingZ);
+    return nearRoadX <= this.roadHalfWidth || nearRoadZ <= this.roadHalfWidth;
+  }
+
+  isInLegalDrivingArea(x: number, z: number): boolean {
+    for (const area of this.legalDrivingAreas) {
+      if (
+        x >= area.x - area.halfX
+        && x <= area.x + area.halfX
+        && z >= area.z - area.halfZ
+        && z <= area.z + area.halfZ
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  getRoadContext(x: number, z: number, velocityX: number, velocityZ: number): RoadContext {
+    const nearestXIndex = this.nearestRoadIndex(x, this.roadPositionsX, this.roadSpacingX);
+    const nearestZIndex = this.nearestRoadIndex(z, this.roadPositionsZ, this.roadSpacingZ);
+    const nearestXPosition = this.roadPositionsX[nearestXIndex] ?? 0;
+    const nearestZPosition = this.roadPositionsZ[nearestZIndex] ?? 0;
+    const nearestXDistance = Math.abs(x - nearestXPosition);
+    const nearestZDistance = Math.abs(z - nearestZPosition);
+    const inRoadX = nearestXDistance <= this.roadHalfWidth;
+    const inRoadZ = nearestZDistance <= this.roadHalfWidth;
+    let axis: RoadContext["axis"];
+
+    if (inRoadX !== inRoadZ) {
+      axis = inRoadX ? "northSouth" : "eastWest";
+    } else if (Math.abs(velocityX) !== Math.abs(velocityZ)) {
+      axis = Math.abs(velocityZ) > Math.abs(velocityX) ? "northSouth" : "eastWest";
+    } else {
+      axis = nearestXDistance <= nearestZDistance ? "northSouth" : "eastWest";
+    }
+
+    const distanceToIntersection = axis === "northSouth" ? nearestZDistance : nearestXDistance;
+    return {
+      axis,
+      roadCenter: axis === "northSouth" ? nearestXPosition : nearestZPosition,
+      lateralOffset: axis === "northSouth" ? x - nearestXPosition : z - nearestZPosition,
+      distanceToIntersection,
+      inIntersection: inRoadX && inRoadZ,
+      inTurningGap: distanceToIntersection <= this.roadHalfWidth + GAME_CONFIG.world.roadMarkings.intersectionBuffer,
+      inLegalDrivingArea: this.isInLegalDrivingArea(x, z),
+    };
+  }
+
   private addCollider(collider: BoxCollider): void {
     if (collider.halfX > this.cellSize || collider.halfZ > this.cellSize) {
       this.oversizedColliders.push(collider);
@@ -73,8 +126,13 @@ export class WorldQuery {
 
   private nearestRoadDistance(value: number, positions: number[], spacing: number): number {
     if (positions.length === 0) return Number.POSITIVE_INFINITY;
-    const index = Math.max(0, Math.min(positions.length - 1, Math.round((value - positions[0]) / spacing)));
+    const index = this.nearestRoadIndex(value, positions, spacing);
     return Math.abs(value - positions[index]);
+  }
+
+  private nearestRoadIndex(value: number, positions: number[], spacing: number): number {
+    if (positions.length === 0) return 0;
+    return Math.max(0, Math.min(positions.length - 1, Math.round((value - positions[0]) / spacing)));
   }
 
   private cellFor(value: number): number {

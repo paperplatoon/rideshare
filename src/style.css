@@ -139,6 +139,20 @@ button:disabled {
   border-radius: 6px;
 }
 
+.police-meter {
+  margin: 4px 0;
+  padding: 8px 9px;
+  background: rgba(24, 43, 72, 0.9);
+  border: 1px solid rgba(140, 190, 255, 0.52);
+  border-radius: 6px;
+}
+
+.police-meter.observing {
+  animation: policePulse 0.7s ease-in-out infinite;
+  background: rgba(110, 24, 32, 0.9);
+  border-color: rgba(255, 130, 140, 0.72);
+}
+
 .fuel-meter.low {
   animation: fuelPulse 0.7s ease-in-out infinite;
   background: rgba(185, 28, 28, 0.86);
@@ -151,12 +165,14 @@ button:disabled {
 }
 
 .fuel-label,
-.damage-label {
+.damage-label,
+.police-meter-label {
   margin-bottom: 5px;
 }
 
 .fuel-track,
-.damage-track {
+.damage-track,
+.police-meter-track {
   height: 9px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.38);
@@ -164,7 +180,8 @@ button:disabled {
 }
 
 .fuel-fill,
-.damage-fill {
+.damage-fill,
+.police-meter-fill {
   height: 100%;
   border-radius: 999px;
 }
@@ -177,12 +194,88 @@ button:disabled {
   background: #ef4444;
 }
 
+.police-meter-fill {
+  background: #76aaff;
+}
+
+.police-meter.observing .police-meter-fill {
+  background: #ff5967;
+}
+
 .fuel-meter.low .fuel-fill {
   background: #ffdf5d;
 }
 
 .refuel-status {
   color: #75f0b0;
+}
+
+.citation-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgba(4, 7, 9, 0.74);
+  pointer-events: auto;
+}
+
+.citation-panel {
+  box-sizing: border-box;
+  width: min(420px, 100%);
+  padding: 28px;
+  background: #f1f4f5;
+  border-top: 8px solid #c32635;
+  border-radius: 6px;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
+  color: #15191c;
+  text-align: center;
+}
+
+.citation-agency {
+  color: #566169;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.citation-title {
+  margin-top: 4px;
+  font-size: 34px;
+  font-weight: 950;
+}
+
+.citation-offense {
+  margin-top: 22px;
+  padding: 12px;
+  border: 1px solid #b8c0c4;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.citation-payment {
+  margin-top: 20px;
+  color: #b51f2d;
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.citation-balance {
+  margin-top: 6px;
+  color: #4e5960;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.citation-panel button {
+  width: 100%;
+  background: #20282d;
+  color: #fff;
+}
+
+.citation-panel button:hover {
+  background: #344047;
 }
 
 .refuel-overlay,
@@ -259,6 +352,15 @@ button:disabled {
   }
 }
 
+@keyframes policePulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
 .objective {
   color: #f2c14e;
 }
@@ -310,6 +412,7 @@ button:disabled {
 
 .phone-panel,
 .map-panel {
+  box-sizing: border-box;
   width: min(760px, calc(100vw - 64px));
   max-height: calc(100vh - 72px);
   overflow: auto;
@@ -332,6 +435,115 @@ button:disabled {
   text-align: center;
   font-size: 26px;
   font-weight: 900;
+}
+
+.phone-header {
+  position: sticky;
+  top: -24px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -24px -24px 20px;
+  padding: 16px 24px;
+  background: rgba(18, 23, 27, 0.98);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.phone-tabs {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 7px;
+}
+
+.phone-tab {
+  margin: 0;
+  min-height: 40px;
+  padding: 6px;
+  background: transparent;
+  color: #c5d0d5;
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+.phone-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.phone-tab.active {
+  background: #f2c14e;
+  color: #151515;
+}
+
+.phone-balance {
+  color: #75f0b0;
+  font-size: 16px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.phone-feedback {
+  margin: -6px 0 16px;
+  padding: 10px 12px;
+  background: rgba(37, 151, 91, 0.25);
+  border: 1px solid rgba(117, 240, 176, 0.45);
+  border-radius: 6px;
+  color: #9ff4c6;
+  font-weight: 900;
+  text-align: center;
+}
+
+.mission-status {
+  margin: -7px 0 14px;
+  color: #f2c14e;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.license-lock {
+  display: grid;
+  justify-items: center;
+  width: min(520px, 100%);
+  margin: 34px auto;
+  padding: 38px 20px;
+  border-block: 1px solid rgba(255, 255, 255, 0.16);
+  text-align: center;
+}
+
+.license-lock-label {
+  color: #9fb2ba;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.license-lock-title {
+  margin-top: 7px;
+  font-size: 30px;
+  font-weight: 1000;
+}
+
+.license-lock-description {
+  max-width: 420px;
+  margin-top: 12px;
+  color: #d5dfe3;
+  line-height: 1.45;
+}
+
+.license-lock-rate {
+  margin-top: 16px;
+  color: #75f0b0;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.license-lock button {
+  min-width: 240px;
 }
 
 .map-title {
@@ -438,6 +650,349 @@ button:disabled {
 .offer-list {
   display: grid;
   gap: 14px;
+}
+
+.garage-list,
+.upgrade-list,
+.scorecard-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scorecard-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 14px;
+  padding: 12px 0;
+  background: rgba(0, 0, 0, 0.24);
+  border-block: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.scorecard-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 0 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+.scorecard-summary > div:last-child {
+  border-right: 0;
+}
+
+.scorecard-summary strong {
+  color: #75f0b0;
+  font-size: 17px;
+}
+
+.scorecard-summary span,
+.scorecard-note {
+  color: #9fb2ba;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.scorecard-note {
+  margin: -5px 0 12px;
+  text-align: right;
+}
+
+.ride-scorecard {
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.scorecard-heading,
+.scorecard-money {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scorecard-date {
+  color: #9fb2ba;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.scorecard-stars {
+  margin: 10px 0;
+  color: #f2c14e;
+  font-size: 20px;
+}
+
+.scorecard-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  padding: 10px 0;
+  border-block: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.scorecard-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #9fb2ba;
+  font-size: 10px;
+}
+
+.scorecard-details strong {
+  color: #e2e8ea;
+}
+
+.scorecard-money {
+  align-items: center;
+  margin-top: 11px;
+  color: #b7c5ca;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.scorecard-money strong {
+  color: #75f0b0;
+  font-size: 14px;
+}
+
+.scorecard-empty {
+  display: grid;
+  gap: 5px;
+  padding: 42px 16px;
+  color: #9fb2ba;
+  text-align: center;
+}
+
+.scorecard-empty strong {
+  color: #e2e8ea;
+}
+
+.garage-card,
+.upgrade-card {
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.garage-card.equipped {
+  border-color: rgba(117, 240, 176, 0.65);
+  background: rgba(30, 112, 72, 0.2);
+}
+
+.garage-card-heading,
+.vehicle-stat-label,
+.upgrade-card,
+.upgrade-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vehicle-name,
+.upgrade-name {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.vehicle-status,
+.upgrade-level {
+  margin-top: 2px;
+  color: #9fb2ba;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.vehicle-swatch {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+}
+
+.vehicle-stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.vehicle-stat-label {
+  color: #dce5e8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.vehicle-stat-label span:last-child {
+  color: #aebdc3;
+  text-align: right;
+}
+
+.vehicle-stat-track {
+  position: relative;
+  height: 7px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 4px;
+}
+
+.vehicle-stat-base,
+.vehicle-stat-effective {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+
+.vehicle-stat-effective {
+  background: #75f0b0;
+}
+
+.vehicle-stat-base {
+  background: #7fa9c7;
+}
+
+.garage-card > button,
+.upgrade-card > button {
+  width: 100%;
+  margin-top: 13px;
+}
+
+.upgrade-card {
+  min-height: 118px;
+  flex-wrap: wrap;
+}
+
+.upgrade-comparison {
+  flex-direction: column;
+  align-items: flex-end;
+  color: #dce5e8;
+  font-size: 13px;
+}
+
+.upgrade-comparison strong {
+  color: #75f0b0;
+}
+
+.progression-debug {
+  position: fixed;
+  top: 184px;
+  right: 12px;
+  z-index: 101;
+  width: 310px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.86);
+  border: 1px solid rgba(157, 255, 173, 0.35);
+  color: #dce5e8;
+  pointer-events: auto;
+}
+
+.progression-debug-title {
+  margin-bottom: 8px;
+  color: #9dffad;
+  font: 800 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.progression-debug-row {
+  display: flex;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.progression-debug button,
+.progression-debug select,
+.progression-debug input {
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.progression-debug select {
+  flex: 1 1 auto;
+}
+
+.progression-debug input {
+  width: 42px;
+}
+
+.progression-debug .danger {
+  background: #d35a5a;
+}
+
+@media (max-width: 700px) {
+  .phone-overlay {
+    inset: 8px;
+  }
+
+  .phone-panel {
+    width: 100%;
+    max-height: calc(100vh - 32px);
+    padding: 16px;
+  }
+
+  .phone-header {
+    top: -16px;
+    align-items: stretch;
+    flex-direction: column;
+    margin: -16px -16px 16px;
+    padding: 12px 16px;
+  }
+
+  .phone-tabs {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .phone-tab {
+    padding: 7px 4px;
+  }
+
+  .garage-list,
+  .upgrade-list,
+  .scorecard-list {
+    grid-template-columns: 1fr;
+  }
+
+  .scorecard-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .scorecard-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .scorecard-summary > div:nth-child(n + 3) {
+    margin-top: 10px;
+  }
+
+  .offer-card {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-panel .offer-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .phone-panel .offer-card .ride-details {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .phone-panel .offer-card > button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .progression-debug {
+    display: none;
+  }
 }
 
 .offer-card,

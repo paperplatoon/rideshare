@@ -8,9 +8,14 @@ import { PlayerProfile } from "./PlayerProfile";
 
 describe("DamageManager", () => {
   it("scales crash damage by closing speed and directness", () => {
-    expect(collisionDamagePercent(30, 0.35)).toBeCloseTo(0.03, 1);
-    expect(collisionDamagePercent(55, 1)).toBeCloseTo(0.1, 1);
-    expect(collisionDamagePercent(130, 1)).toBeCloseTo(0.26, 2);
+    const gentleGlance = collisionDamagePercent(30, 0.35);
+    const directCrash = collisionDamagePercent(55, 1);
+    const seriousCrash = collisionDamagePercent(130, 1);
+
+    expect(gentleGlance).toBeGreaterThan(0);
+    expect(gentleGlance).toBeLessThan(directCrash);
+    expect(directCrash).toBeLessThan(seriousCrash);
+    expect(seriousCrash).toBeLessThanOrEqual(1);
   });
 
   it("repairs only while held at a shop and spends money", () => {

@@ -2,6 +2,7 @@ import { GAME_CONFIG } from "../game/config";
 import { PassengerType, type DeliveryPoint, type RideOffer, type RideTier } from "../game/types";
 import { distanceXZ, pickWeighted, randomBetween, seededRandom } from "../utils/math";
 import type { PlayerCar } from "../player/PlayerCar";
+import type { MissionLicenseDefinition } from "../missions/MissionLicenseCatalog";
 
 const FIRST_NAMES = [
   "Amanda",
@@ -27,14 +28,20 @@ const OFFER_TIERS: RideTier[] = ["SHORT", "MEDIUM", "LONG"];
 
 export class RideOfferManager {
   readonly offers: RideOffer[] = [];
-  private readonly rng = seededRandom(7419);
+  private readonly rng: () => number;
   private nextId = 1;
   private distanceRefreshElapsed = 0;
 
-  constructor(private readonly points: DeliveryPoint[], private readonly player: PlayerCar) {
-    for (let i = 0; i < OFFER_TIERS.length; i++) {
+  constructor(
+    private readonly points: DeliveryPoint[],
+    private readonly player: PlayerCar,
+    readonly category: MissionLicenseDefinition,
+  ) {
+    this.rng = seededRandom(category.offerSeed);
+    const tiers = this.generateTierSet();
+    for (let i = 0; i < GAME_CONFIG.ride.offerCount; i++) {
       const stagger = (GAME_CONFIG.ride.offerCount - i - 1) * -GAME_CONFIG.ride.offerLifetimeSeconds;
-      this.offers.push(this.generateOffer(OFFER_TIERS[i], stagger));
+      this.offers.push(this.generateOffer(tiers[i], stagger));
     }
   }
 
@@ -55,9 +62,9 @@ export class RideOfferManager {
 
     const oldest = this.offers[this.offers.length - 1];
     if (oldest.ageSeconds >= GAME_CONFIG.ride.offerLifetimeSeconds) {
-      const expiredTier = oldest.tier;
       this.offers.pop();
-      this.offers.unshift(this.generateOffer(expiredTier, -GAME_CONFIG.ride.offerLifetimeSeconds * (GAME_CONFIG.ride.offerCount - 1)));
+      const tier = this.pickReplacementTier();
+      this.offers.unshift(this.generateOffer(tier, -GAME_CONFIG.ride.offerLifetimeSeconds * (GAME_CONFIG.ride.offerCount - 1)));
     }
   }
 
@@ -73,9 +80,10 @@ export class RideOfferManager {
   refillOffers(): void {
     this.offers.length = 0;
     this.distanceRefreshElapsed = 0;
-    for (let i = 0; i < OFFER_TIERS.length; i++) {
+    const tiers = this.generateTierSet();
+    for (let i = 0; i < GAME_CONFIG.ride.offerCount; i++) {
       const stagger = (GAME_CONFIG.ride.offerCount - i - 1) * -GAME_CONFIG.ride.offerLifetimeSeconds;
-      this.offers.push(this.generateOffer(OFFER_TIERS[i], stagger));
+      this.offers.push(this.generateOffer(tiers[i], stagger));
     }
   }
 
@@ -90,10 +98,14 @@ export class RideOfferManager {
       GAME_CONFIG.ride.fare.randomMultiplierMax,
     );
     const effectiveDistance = tripDistance + pickupDistance * GAME_CONFIG.ride.fare.pickupDistanceWeight;
-    const baseFare = (GAME_CONFIG.ride.fare.baseFare + effectiveDistance * GAME_CONFIG.ride.fare.ratePerMeter) * fareMultiplier;
+    const standardBaseFare = (GAME_CONFIG.ride.fare.baseFare + effectiveDistance * GAME_CONFIG.ride.fare.ratePerMeter)
+      * fareMultiplier;
+    const baseFare = standardBaseFare * this.category.fareMultiplier;
 
     return {
-      id: `ride-${this.nextId++}`,
+      id: `${this.category.id}-ride-${this.nextId++}`,
+      missionCategoryId: this.category.id,
+      categoryFareMultiplier: this.category.fareMultiplier,
       tier,
       passengerName: this.generateName(),
       passengerType: this.pickPassengerType(),
@@ -159,6 +171,26 @@ export class RideOfferManager {
     for (const offer of this.offers) {
       offer.pickupDistance = distanceXZ(this.player.root.position, offer.pickupPoint.position) * GAME_CONFIG.ride.metersPerWorldUnit;
     }
+  }
+
+  private generateTierSet(): RideTier[] {
+    const tiers = Array.from({ length: GAME_CONFIG.ride.offerCount }, () => this.randomTier());
+    if (tiers.length >= 2 && tiers.every((tier) => tier === tiers[0])) {
+      tiers[tiers.length - 1] = this.randomTier(tiers[0]);
+    }
+    return tiers;
+  }
+
+  private pickReplacementTier(): RideTier {
+    if (this.offers.length >= 2 && this.offers.every((offer) => offer.tier === this.offers[0].tier)) {
+      return this.randomTier(this.offers[0].tier);
+    }
+    return this.randomTier();
+  }
+
+  private randomTier(excluded?: RideTier): RideTier {
+    const candidates = excluded ? OFFER_TIERS.filter((tier) => tier !== excluded) : OFFER_TIERS;
+    return candidates[Math.floor(this.rng() * candidates.length)];
   }
 
   private bandFor(tier: RideTier): { minDistance: number; maxDistance: number } {

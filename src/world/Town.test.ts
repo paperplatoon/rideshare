@@ -14,6 +14,8 @@ describe("TownGenerator", () => {
     expect(town.staticColliders.length).toBeGreaterThan(300);
     expect(town.gasStations).toHaveLength(7);
     expect(town.autoBodyShops).toHaveLength(3);
+    expect(town.legalDrivingAreas).toHaveLength(10);
+    expect(town.meshes.some((mesh) => mesh.name === "center-lines")).toBe(true);
     expect(scene.meshes.length).toBe(town.meshes.length);
     scene.dispose();
     engine.dispose();

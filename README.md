@@ -29,7 +29,7 @@ npm test
 
 ## Gameplay
 
-Click Start, press `P`, choose one of three ride offers, drive to the yellow pickup marker, then drive to the green destination marker. Passengers rate the ride based on collisions and speed preferences. Base fare is guaranteed, while the tip depends on passenger satisfaction. Keep an eye on gas and refuel at large roadside stations.
+Click Start and press `P` to use the phone. Rideshare begins unlocked; permanent Taxi and Rideshare Silver licenses add independent job pools paying 2× and 3× standard base fares. Drive to the yellow pickup marker, then to the green destination marker. Licenses, garage vehicles, permanent upgrades, and detailed scorecards for the latest 100 completed rides persist between sessions.
 
 ## Architecture
 
@@ -37,22 +37,28 @@ The game is split into small systems under `src/`:
 
 - `game`: lifecycle, fixed-step simulation, config, orchestration, and optional performance metrics
 - `world`: chunked procedural geometry and spatially indexed static collision data
-- `player`: simcade car handling, profile/progression, smoothed input, fuel, and chase camera
+- `player`: simcade car handling, profile/progression, smoothed input, fuel, driving violations, and chase camera
+- `progression`: versioned local-storage saves and permanent upgrade calculations
+- `vehicles`: the vehicle catalog, base stats, dimensions, and appearance data
 - `activity`: ownership of the currently active job or game mode
 - `ride`: phone offers, passenger rules, pickup/dropoff markers, tips, ratings, and scoring
+- `missions`: configuration-driven mission licenses, unlock prices, and fare multipliers
 - `player/FuelManager`: fuel drain and refueling state
-- `traffic`: simple waypoint traffic
+- `traffic`: pooled waypoint traffic and police vehicle roles
+- `police`: officer visibility, suspicion, fines, and citation state
 - `ui`: HTML/CSS start screen, HUD, direction indicator, and results screen
 
 Major tuning values live in `src/game/config.ts`.
 
-Append `?debug=1` to the local URL to show FPS, update/render time, draw calls, mesh counts, active AI, and collision candidates.
+Append `?debug=1` to the local URL to show performance metrics and progression controls for money, car ownership, equipped vehicle, upgrade levels, and save reset.
+
+Police cars observe speeding, wrong-way driving, and sidewalk use through configurable forward and rear vision cones. Sustained observed violations trigger an immediate fine and a citation that must be acknowledged before driving resumes. Police vision cones are visible by default in debug mode and can be toggled from the progression panel.
 
 ## Known Limitations
 
 - Vehicle movement uses a lightweight tire-grip model rather than full rigid-body wheel physics.
 - Controller input is not implemented yet; the driving input values are analog-ready.
 - Traffic uses waypoint following with minimal avoidance.
-- Passenger satisfaction currently reacts to traffic collisions and speed only.
+- Police issue citations immediately; pursuit, chase, and pull-over behavior is not implemented yet.
 - Visuals are prototype geometry and flat colors.
-- No mobile controls, audio, minimap, persistence, or multiplayer.
+- No mobile controls, audio, controller support, or multiplayer.

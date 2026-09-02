@@ -1,6 +1,7 @@
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { SceneInstrumentation } from "@babylonjs/core/Instrumentation/sceneInstrumentation";
 import type { Scene } from "@babylonjs/core/scene";
+import type { DrivingBehaviorManager } from "../player/DrivingBehaviorManager";
 
 export class PerformanceMonitor {
   private readonly enabled = new URLSearchParams(window.location.search).has("debug");
@@ -49,7 +50,7 @@ export class PerformanceMonitor {
     }
   }
 
-  afterRender(activeAiCount: number, collisionCandidates: number): void {
+  afterRender(activeAiCount: number, collisionCandidates: number, drivingBehavior: DrivingBehaviorManager | null): void {
     if (!this.element || !this.instrumentation) {
       return;
     }
@@ -58,7 +59,7 @@ export class PerformanceMonitor {
       return;
     }
     this.lastDisplayUpdate = now;
-    this.element.textContent = [
+    const lines = [
       `${this.engine.getFps().toFixed(0)} FPS`,
       `${this.updateMilliseconds.toFixed(2)} ms update`,
       `${this.instrumentation.renderTimeCounter.lastSecAverage.toFixed(2)} ms render`,
@@ -66,7 +67,16 @@ export class PerformanceMonitor {
       `${this.scene.getActiveMeshes().length}/${this.scene.meshes.length} meshes`,
       `${activeAiCount} active AI`,
       `${collisionCandidates} collision candidates`,
-    ].join("\n");
+    ];
+    if (drivingBehavior) {
+      const current = drivingBehavior.current;
+      const totals = drivingBehavior.totals;
+      lines.push(
+        `violations speed ${current.speeding.toFixed(2)} wrong ${current.wrongSide.toFixed(2)} sidewalk ${current.sidewalk.toFixed(2)}`,
+        `illegal points ${totals.total.toFixed(1)} (speed ${totals.speeding.toFixed(1)} wrong ${totals.wrongSide.toFixed(1)} sidewalk ${totals.sidewalk.toFixed(1)})`,
+      );
+    }
+    this.element.textContent = lines.join("\n");
   }
 
   dispose(): void {

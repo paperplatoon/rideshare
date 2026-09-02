@@ -42,7 +42,8 @@ export class ChaseCamera {
 
     Vector3.LerpToRef(this.camera.position, this.desiredPosition, damping(deltaTime, this.config.positionDamping), this.camera.position);
     Vector3.LerpToRef(this.target, this.desiredTarget, damping(deltaTime, this.config.targetDamping), this.target);
-    const speedRatio = clamp(this.player.getSpeedMph() / GAME_CONFIG.player.maxForwardSpeed, 0, 1);
+    const maxSpeedMph = this.player.getMaxForwardSpeed() * GAME_CONFIG.ride.mphPerWorldUnitPerSecond;
+    const speedRatio = clamp(this.player.getSpeedMph() / maxSpeedMph, 0, 1);
     const desiredFov = lerp(this.config.minFov, this.config.maxFov, Math.pow(speedRatio, 1.6));
     this.camera.fov = lerp(this.camera.fov, desiredFov, damping(deltaTime, 4));
     this.camera.setTarget(this.target);

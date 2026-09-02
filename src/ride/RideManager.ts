@@ -8,8 +8,9 @@ import { GAME_CONFIG } from "../game/config";
 import { PassengerType, RideState, type RideOffer, type RideResult } from "../game/types";
 import { clamp, distanceXZ } from "../utils/math";
 import type { PlayerCar } from "../player/PlayerCar";
-import type { RideOfferManager } from "./RideOfferManager";
 import type { PlayerProfile } from "../player/PlayerProfile";
+import { getMissionLicense, type MissionLicenseId } from "../missions/MissionLicenseCatalog";
+import type { RideOfferBoard } from "./RideOfferBoard";
 
 interface PassengerRules {
   collisionPenalty: number;
@@ -29,13 +30,16 @@ export class RideManager {
   collisionFlashSeconds = 0;
   private passengerElapsed = 0;
   private tipTimeMultiplier = 1;
+  private violationBaselinePoints = 0;
+  private rideViolationPoints = 0;
   private collisionCooldown = 0;
+  private collisionCount = 0;
   private marker: Mesh | null = null;
   private markerMaterial: StandardMaterial | null = null;
 
   constructor(
     private readonly scene: Scene,
-    private readonly offers: RideOfferManager,
+    private readonly offerBoard: RideOfferBoard,
     private readonly profile: PlayerProfile,
   ) {}
 
@@ -51,11 +55,11 @@ export class RideManager {
     return this.profile.money;
   }
 
-  acceptRide(id: string): boolean {
+  acceptRide(categoryId: MissionLicenseId, id: string): boolean {
     if (this.state !== RideState.Idle) {
       return false;
     }
-    const offer = this.offers.acceptOffer(id);
+    const offer = this.offerBoard.acceptOffer(categoryId, id);
     if (!offer) {
       return false;
     }
@@ -65,7 +69,7 @@ export class RideManager {
     return true;
   }
 
-  update(deltaTime: number, player: PlayerCar, active: boolean): void {
+  update(deltaTime: number, player: PlayerCar, active: boolean, totalViolationPoints = 0): void {
     this.resultTimeRemaining = Math.max(0, this.resultTimeRemaining - deltaTime);
     this.collisionFlashSeconds = Math.max(0, this.collisionFlashSeconds - deltaTime);
     if (this.collisionFlashSeconds <= 0) {
@@ -78,12 +82,13 @@ export class RideManager {
 
     if (this.state === RideState.DrivingToPickup) {
       if (distanceXZ(player.root.position, this.activeRide.pickupPoint.position) <= GAME_CONFIG.ride.pickupRadius) {
-        this.pickUpPassenger();
+        this.pickUpPassenger(totalViolationPoints);
       }
       return;
     }
 
     if (this.state === RideState.PassengerOnboard) {
+      this.rideViolationPoints = Math.max(0, totalViolationPoints - this.violationBaselinePoints);
       this.passengerElapsed += deltaTime;
       this.tipTimeMultiplier = clamp(
         this.tipTimeMultiplier - GAME_CONFIG.ride.fare.tipDecayPercentPerSecond * deltaTime,
@@ -107,6 +112,7 @@ export class RideManager {
     }
     const penalty = this.rulesFor(this.activeRide.passengerType).collisionPenalty;
     this.satisfaction = clamp(this.satisfaction - penalty, 0, 100);
+    this.collisionCount += 1;
     this.collisionCooldown = GAME_CONFIG.ride.satisfaction.collisionCooldownSeconds;
     this.collisionFlashText = `COLLISION -${penalty}`;
     this.collisionFlashSeconds = 1.2;
@@ -129,7 +135,20 @@ export class RideManager {
     if (!this.activeRide) {
       return 0;
     }
-    return this.calculateTip(this.activeRide.baseFare, this.satisfaction, this.tipTimeMultiplier);
+    return this.calculateTip(
+      this.activeRide.baseFare,
+      this.satisfaction,
+      this.tipTimeMultiplier,
+      this.getViolationTipMultiplier(),
+    );
+  }
+
+  get currentViolationPoints(): number {
+    return this.rideViolationPoints;
+  }
+
+  get violationTipPenaltyPercent(): number {
+    return (1 - this.getViolationTipMultiplier()) * 100;
   }
 
   getStars(): number {
@@ -175,7 +194,7 @@ export class RideManager {
     return Math.ceil(score / 20);
   }
 
-  private pickUpPassenger(): void {
+  private pickUpPassenger(totalViolationPoints: number): void {
     if (!this.activeRide) {
       return;
     }
@@ -183,7 +202,10 @@ export class RideManager {
     this.satisfaction = GAME_CONFIG.ride.satisfaction.startingScore;
     this.passengerElapsed = 0;
     this.tipTimeMultiplier = 1;
+    this.violationBaselinePoints = totalViolationPoints;
+    this.rideViolationPoints = 0;
     this.collisionCooldown = 0;
+    this.collisionCount = 0;
     this.showMarker(this.activeRide.destinationPoint.position, new Color3(0.2, 0.95, 0.4), "ride-destination-marker");
   }
 
@@ -210,17 +232,33 @@ export class RideManager {
       return;
     }
     const baseFare = this.activeRide.baseFare;
-    const tip = this.calculateTip(baseFare, this.satisfaction, this.tipTimeMultiplier);
+    const violationTipPenaltyPercent = this.violationTipPenaltyPercent;
+    const tip = this.calculateTip(
+      baseFare,
+      this.satisfaction,
+      this.tipTimeMultiplier,
+      this.getViolationTipMultiplier(),
+    );
     const total = baseFare + tip;
-    this.profile.completeRide(total);
-    this.lastResult = {
+    const result: RideResult = {
       passengerName: this.activeRide.passengerName,
       passengerType: this.activeRide.passengerType,
+      missionCategoryId: this.activeRide.missionCategoryId,
+      rideTier: this.activeRide.tier,
+      pickupDistance: this.activeRide.pickupDistance,
+      tripDistance: this.activeRide.tripDistance,
+      durationSeconds: this.passengerElapsed,
+      collisionCount: this.collisionCount,
       stars: this.getStars(),
       baseFare,
       tip,
+      timeTipPercentRemaining: this.tipTimeMultiplier * 100,
+      violationPoints: this.rideViolationPoints,
+      violationTipPenaltyPercent,
       total,
     };
+    this.profile.completeRide(result);
+    this.lastResult = result;
     this.resultTimeRemaining = GAME_CONFIG.ride.rideResultSeconds;
     this.marker?.setEnabled(false);
     this.activeRide = null;
@@ -228,12 +266,38 @@ export class RideManager {
     this.satisfaction = GAME_CONFIG.ride.satisfaction.startingScore;
     this.passengerElapsed = 0;
     this.tipTimeMultiplier = 1;
+    this.violationBaselinePoints = 0;
+    this.rideViolationPoints = 0;
     this.collisionCooldown = 0;
-    this.offers.refillOffers();
+    this.collisionCount = 0;
+    this.offerBoard.refillOffers(result.missionCategoryId);
   }
 
-  private calculateTip(baseFare: number, satisfaction: number, timeMultiplier: number): number {
-    return baseFare * GAME_CONFIG.ride.fare.maxTipPercent * (satisfaction / 100) * timeMultiplier;
+  private calculateTip(baseFare: number, satisfaction: number, timeMultiplier: number, violationMultiplier: number): number {
+    return baseFare
+      * this.getMaxTipPercent()
+      * (satisfaction / 100)
+      * timeMultiplier
+      * violationMultiplier;
+  }
+
+  private getViolationTipMultiplier(): number {
+    const categoryMultiplier = this.activeRide
+      ? getMissionLicense(this.activeRide.missionCategoryId)?.violationTipPenaltyMultiplier ?? 1
+      : 1;
+    return clamp(
+      1 - this.rideViolationPoints
+        * GAME_CONFIG.ride.fare.violationTipPenaltyPerPoint
+        * categoryMultiplier,
+      0,
+      1,
+    );
+  }
+
+  private getMaxTipPercent(): number {
+    if (!this.activeRide) return GAME_CONFIG.ride.fare.maxTipPercent;
+    return getMissionLicense(this.activeRide.missionCategoryId)?.maxTipPercent
+      ?? GAME_CONFIG.ride.fare.maxTipPercent;
   }
 
   private rulesFor(type: PassengerType): PassengerRules {

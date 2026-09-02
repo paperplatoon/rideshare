@@ -11,6 +11,7 @@ import { collisionDamagePercent } from "../player/DamageManager";
 
 export class TrafficManager {
   readonly cars: TrafficCar[] = [];
+  readonly policeCars: TrafficCar[] = [];
   activeCarCount = 0;
   lastCollisionCandidateCount = 0;
   private readonly rng = seededRandom(3777);
@@ -38,8 +39,12 @@ export class TrafficManager {
       this.material(scene, "traffic-blue", new Color3(0.12, 0.36, 0.72)),
       this.material(scene, "traffic-white", new Color3(0.82, 0.85, 0.82)),
       this.material(scene, "traffic-teal", new Color3(0.1, 0.55, 0.5)),
+      this.material(scene, "traffic-police", Color3.White()),
     ];
-    this.prototypes = this.materials.map((material, index) => TrafficCar.createPrototype(scene, material, index));
+    this.prototypes = this.materials.slice(0, 4)
+      .map((material, index) => TrafficCar.createPrototype(scene, material, index));
+    const policePrototype = TrafficCar.createPolicePrototype(scene, this.materials[4]);
+    this.prototypes.push(policePrototype);
 
     const shuffled = [...this.waypoints].sort(() => this.rng() - 0.5);
     const spawnRounds = Math.ceil(GAME_CONFIG.traffic.vehicleCount / shuffled.length);
@@ -49,17 +54,21 @@ export class TrafficManager {
       const speed = GAME_CONFIG.traffic.minSpeed + this.rng() * (GAME_CONFIG.traffic.maxSpeed - GAME_CONFIG.traffic.minSpeed);
       const spawnRound = Math.floor(i / shuffled.length);
       const spawnProgress = spawnRound === 0 ? 0 : spawnRound / spawnRounds;
+      const role = i < GAME_CONFIG.police.vehicleCount ? "police" : "civilian";
       const car = new TrafficCar(
+        i,
+        role,
         waypoint,
         direction,
         speed,
         this.roadPositionsX,
         this.roadPositionsZ,
         this.rng,
-        this.prototypes[i % this.prototypes.length],
+        role === "police" ? policePrototype : this.prototypes[i % 4],
         spawnProgress,
       );
       this.cars.push(car);
+      if (role === "police") this.policeCars.push(car);
       this.indexByCar.set(car, i);
       this.nearbyByCar.push([]);
       this.updateAccumulatorByCar.push(0);

@@ -27,7 +27,8 @@ export class FuelManager {
     }
 
     const speedMph = player.getSpeedMph();
-    const speedRatio = clamp(speedMph / GAME_CONFIG.player.maxForwardSpeed, 0, 1);
+    const maxSpeedMph = player.getMaxForwardSpeed() * GAME_CONFIG.ride.mphPerWorldUnitPerSecond;
+    const speedRatio = clamp(speedMph / maxSpeedMph, 0, 1);
     const movingMultiplier = speedMph < 1
       ? GAME_CONFIG.fuel.idleDrainMultiplier
       : GAME_CONFIG.fuel.minMovingDrainMultiplier + speedRatio * GAME_CONFIG.fuel.speedDrainMultiplier;

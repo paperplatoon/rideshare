@@ -1,9 +1,11 @@
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { MissionLicenseId } from "../missions/MissionLicenseCatalog";
 
 export enum GameState {
   Start = "START",
   Playing = "PLAYING",
   Paused = "PAUSED",
+  Citation = "CITATION",
 }
 
 export interface DeliveryPoint {
@@ -37,6 +39,46 @@ export interface BoxCollider {
   z: number;
   halfX: number;
   halfZ: number;
+}
+
+export type RoadAxis = "northSouth" | "eastWest";
+
+export interface RoadContext {
+  axis: RoadAxis;
+  roadCenter: number;
+  lateralOffset: number;
+  distanceToIntersection: number;
+  inIntersection: boolean;
+  inTurningGap: boolean;
+  inLegalDrivingArea: boolean;
+}
+
+export interface DrivingViolationSeverity {
+  speeding: number;
+  wrongSide: number;
+  sidewalk: number;
+  combined: number;
+}
+
+export interface DrivingViolationTotals {
+  speeding: number;
+  wrongSide: number;
+  sidewalk: number;
+  total: number;
+}
+
+export type DrivingViolationRates = DrivingViolationTotals;
+
+export type TrafficVehicleRole = "civilian" | "police";
+
+export type PoliceOffense = "SPEEDING" | "WRONG WAY" | "SIDEWALK DRIVING";
+
+export interface PoliceCitation {
+  officerId: number;
+  offense: PoliceOffense;
+  assessedFine: number;
+  amountPaid: number;
+  remainingBalance: number;
 }
 
 export interface RoadNode {
@@ -74,6 +116,8 @@ export type RideTier = "SHORT" | "MEDIUM" | "LONG";
 
 export interface RideOffer {
   id: string;
+  missionCategoryId: MissionLicenseId;
+  categoryFareMultiplier: number;
   tier: RideTier;
   passengerName: string;
   passengerType: PassengerType;
@@ -89,8 +133,22 @@ export interface RideOffer {
 export interface RideResult {
   passengerName: string;
   passengerType: PassengerType;
+  missionCategoryId: MissionLicenseId;
+  rideTier: RideTier;
+  pickupDistance: number;
+  tripDistance: number;
+  durationSeconds: number;
+  collisionCount: number;
   stars: number;
   baseFare: number;
   tip: number;
+  timeTipPercentRemaining: number;
+  violationPoints: number;
+  violationTipPenaltyPercent: number;
   total: number;
+}
+
+export interface RideHistoryEntry extends RideResult {
+  id: string;
+  completedAt: number;
 }
