@@ -1,6 +1,6 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GAME_CONFIG } from "../game/config";
 import { PlayerCar } from "../player/PlayerCar";
 import { TownGenerator } from "../world/Town";
@@ -50,6 +50,17 @@ describe("TrafficManager", () => {
     );
     expect(recycledDistance).toBeLessThanOrEqual(GAME_CONFIG.traffic.respawnMaxRadius);
     expect(traffic.cars[0].role).toBe("police");
+
+    const pursuingOfficer = traffic.cars[0];
+    pursuingOfficer.setPursuitTarget(player.root.position);
+    const pursuitGeneration = pursuingOfficer.respawnGeneration;
+    pursuingOfficer.mesh.position.set(10000, 1, 10000);
+    traffic.update(1 / 60, player);
+    expect(pursuingOfficer.respawnGeneration).toBe(pursuitGeneration);
+    expect(pursuingOfficer.mesh.position.x).toBe(10000);
+    expect(pursuingOfficer.isPursuing).toBe(true);
+    pursuingOfficer.clearPursuit();
+
     traffic.dispose();
     scene.dispose();
     engine.dispose();
@@ -77,12 +88,25 @@ describe("TrafficManager", () => {
     target.mesh.position.set(player.root.position.x + touchingOffset + 0.1, 1, player.root.position.z);
     const originalX = player.root.position.x;
 
-    traffic.update(0, player);
+    const noCollision = traffic.update(0, player);
     expect(player.root.position.x).toBeCloseTo(originalX);
+    expect(noCollision.collisionViolationSeverity).toBe(0);
 
     target.mesh.position.x = player.root.position.x + touchingOffset - 0.5;
-    traffic.update(0, player);
+    const policeCollision = traffic.update(0, player);
     expect(player.root.position.x).toBeLessThan(originalX);
+    expect(policeCollision.collisionViolationSeverity).toBe(0);
+    expect(policeCollision.policeCollisionOfficerId).toBe(target.id);
+
+    target.mesh.position.set(player.root.position.x + 100, 1, player.root.position.z + 100);
+    vi.spyOn(player, "getVelocityX").mockReturnValue(20);
+    vi.spyOn(player, "getVelocityZ").mockReturnValue(0);
+    const civilian = traffic.cars[GAME_CONFIG.police.vehicleCount];
+    civilian.mesh.position.set(player.root.position.x + touchingOffset - 0.5, 1, player.root.position.z);
+    civilian.mesh.rotation.y = 0;
+    const collision = traffic.update(0, player);
+    expect(collision.collisionViolationSeverity).toBeGreaterThan(0);
+    expect(collision.policeCollisionOfficerId).toBeNull();
 
     traffic.dispose();
     scene.dispose();

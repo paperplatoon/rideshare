@@ -1,6 +1,6 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PassengerType, RideState } from "../game/types";
 import { PlayerCar } from "../player/PlayerCar";
 import { PlayerProfile } from "../player/PlayerProfile";
@@ -38,6 +38,43 @@ describe("RideManager", () => {
     expect(profile.rideHistory[0].missionCategoryId).toBe("rideshare");
     expect(profile.rideHistory[0].tripDistance).toBe(offer.tripDistance);
     expect(Object.values(PassengerType)).toContain(rides.lastResult?.passengerType);
+    rides.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("requires the player to be below five MPH for pickup and dropoff", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const town = new TownGenerator(scene).generate();
+    const player = new PlayerCar(scene, town.roadSpawnPoints);
+    const board = new RideOfferBoard(town.deliveryPoints, player);
+    const offers = board.ensurePool("rideshare")!;
+    const profile = new PlayerProfile();
+    const rides = new RideManager(scene, board, profile);
+    const offer = offers.offers[0];
+    const speed = vi.spyOn(player, "getSpeedMph").mockReturnValue(5);
+
+    expect(rides.acceptRide("rideshare", offer.id)).toBe(true);
+    player.root.position.copyFrom(offer.pickupPoint.position);
+    rides.update(1 / 60, player, true);
+    expect(rides.state).toBe(RideState.DrivingToPickup);
+    expect(rides.isWaitingForArrivalSpeed(player)).toBe(true);
+
+    speed.mockReturnValue(4.99);
+    rides.update(0, player, true);
+    expect(rides.state).toBe(RideState.PassengerOnboard);
+
+    speed.mockReturnValue(8);
+    player.root.position.copyFrom(offer.destinationPoint.position);
+    rides.update(1 / 60, player, true);
+    expect(rides.state).toBe(RideState.PassengerOnboard);
+
+    speed.mockReturnValue(0);
+    rides.update(0, player, true);
+    expect(rides.state).toBe(RideState.Idle);
+    expect(profile.completedRides).toBe(1);
+
     rides.dispose();
     scene.dispose();
     engine.dispose();

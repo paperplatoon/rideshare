@@ -26,6 +26,9 @@ export interface AutoBodyShop {
 export interface TrafficCollisionInfo {
   ridePenaltyMph: number;
   damagePercent: number;
+  collisionViolationSeverity: number;
+  policeCollisionOfficerId: number | null;
+  policeCollisionSeverity: number;
 }
 
 export interface CircleCollider {
@@ -71,7 +74,12 @@ export type DrivingViolationRates = DrivingViolationTotals;
 
 export type TrafficVehicleRole = "civilian" | "police";
 
-export type PoliceOffense = "SPEEDING" | "WRONG WAY" | "SIDEWALK DRIVING";
+export type PoliceOffense =
+  | "SPEEDING"
+  | "WRONG WAY"
+  | "SIDEWALK DRIVING"
+  | "RECKLESS DRIVING"
+  | "COLLISION WITH POLICE";
 
 export interface PoliceCitation {
   officerId: number;

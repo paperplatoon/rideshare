@@ -39,11 +39,11 @@ export const GAME_CONFIG = {
     length: 10.2,
     width: 5.8,
     // Linear speeds are world units/second; acceleration and braking are world units/second squared.
-    acceleration: 15.2,
+    acceleration: 18.2,
     highSpeedAcceleration: 4.1,
     accelerationFalloffPower: 1.45,
     reverseAcceleration: 7,
-    braking: 18,
+    braking: 22,
     rollingResistance: 0.75,
     aerodynamicDrag: 0.00022,
     // This controls physical top speed. Displayed MPH is this value times mphPerWorldUnitPerSecond.
@@ -89,7 +89,7 @@ export const GAME_CONFIG = {
   },
   camera: {
     // Camera distances and look-ahead are in world units. FOV values are radians.
-    distance: 20,
+    distance: 30,
     height: 15,
     lookAhead: 18,
     positionDamping: 7.5,
@@ -106,9 +106,23 @@ export const GAME_CONFIG = {
     hitboxWidth: 5.4,
     hitboxLength: 9.4,
     // Traffic speeds are world units/second and use the same MPH conversion as the player.
-    minSpeed: 10,
-    maxSpeed: 17,
-    lookAheadDistance: 16,
+    minSpeed: 25,
+    maxSpeed: 50,
+    minSpeedChangeSeconds: 8,
+    maxSpeedChangeSeconds: 12,
+    acceleration: 4,
+    braking: 22,
+    turnSpeed: 24,
+    turnSlowdownDistance: 75,
+    turnCurveRadius: 32,
+    turnCurveSegments: 6,
+    // Following gaps are bumper-to-bumper world-unit distances. Time headway is in seconds.
+    minimumFollowingGap: 8,
+    followingTimeHeadway: 0.9,
+    followingSpeedCorrection: 1.2,
+    sameLaneTolerance: 4.5,
+    sameDirectionAlignment: 0.85,
+    lookAheadDistance: 85,
     spatialCellSize: 48,
     playerCollisionQueryRadius: 24,
     fullSimulationRadius: 520,
@@ -122,7 +136,7 @@ export const GAME_CONFIG = {
     laneOffset: 18.75,
   },
   drivingRules: {
-    speedLimitMph: 45,
+    speedLimitMph: 60,
     speedToleranceMph: 5,
     fullSpeedingMph: 70,
     minimumEvaluationSpeedMph: 3,
@@ -134,13 +148,41 @@ export const GAME_CONFIG = {
   police: {
     vehicleCount: 10,
     updateIntervalSeconds: 0.1,
-    forwardRange: 340,
-    rearRange: 110,
-    forwardHalfAngleDegrees: 45,
-    rearHalfAngleDegrees: 30,
+    // Vision is the union of a close circle and an oriented cross. Distances are world units.
+    visionRadius: 45,
+    visionCrossWidth: 60,
+    visionForwardLength: 340,
+    visionRearLength: 110,
+    visionSideLength: 240,
     citationThreshold: 4,
     suspicionDecayPerSecond: 2,
     citationCooldownSeconds: 10,
+    // A player-caused impact at or above this speed is a discrete moving violation.
+    collisionMinimumImpactSpeedMph: 3,
+    collisionFullSeveritySpeedMph: 60,
+    collisionViolationPoints: 4,
+    // Pursuit movement uses world units/second; the configured speed is about 90 MPH at the current conversion.
+    pursuitSpeed: 115,
+    pursuitAcceleration: 16,
+    pursuitBraking: 24,
+    pursuitTurnSpeed: 40,
+    // Pursuing officers use this inner lane offset to pass normal traffic while staying on the road.
+    pursuitLaneOffset: 8,
+    pursuitMinimumFollowingGap: 4,
+    pursuitFollowingTimeHeadway: 0.5,
+    // U-turn distances are world units. Higher penalties/savings requirements make reversals less frequent.
+    pursuitUTurnMinimumBehindDistance: 12,
+    pursuitUTurnRequiredRouteSavings: 35,
+    pursuitReverseDirectionPenalty: 60,
+    pursuitUTurnCooldownSeconds: 3,
+    // Once this close to an intersection, an officer finishes the turn it already selected.
+    pursuitTurnCommitDistance: 75,
+    // Bust and escape ranges are gameplay meters after applying ride.metersPerWorldUnit.
+    bustRadiusMeters: 10,
+    bustDurationSeconds: 4,
+    bustDecaySecondsPerSecond: 1,
+    escapeDistanceMeters: 600,
+    escapeDurationSeconds: 8,
     minimumFine: 40,
     maximumFine: 150,
   },
@@ -159,7 +201,7 @@ export const GAME_CONFIG = {
       rideshare: 0,
       taxi: 300,
       rideshare_silver: 3000,
-      package_delivery: 1000,
+      package_delivery: 500,
     },
     vehiclePrices: {
       starter: 0,
@@ -212,7 +254,7 @@ export const GAME_CONFIG = {
   },
   packageDelivery: {
     offerSeed: 31991,
-    ratePerMeter: 0.04,
+    ratePerMeter: 0.08,
     fareDecayPercentPerSecond: 0.005,
     // Offer-generation distances are meters after applying ride.metersPerWorldUnit.
     maxPickupDistance: 1200,
@@ -253,10 +295,11 @@ export const GAME_CONFIG = {
     // Arrival radii remain physical world units.
     pickupRadius: 7,
     destinationRadius: 7,
+    maximumArrivalSpeedMph: 5,
     rideResultSeconds: 2,
     fare: {
       baseFare: 9.75,
-      ratePerMeter: 0.015,
+      ratePerMeter: 0.02,
       pickupDistanceWeight: 0.35,
       randomMultiplierMin: 0.7,
       randomMultiplierMax: 1.3,

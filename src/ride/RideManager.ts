@@ -81,7 +81,7 @@ export class RideManager {
     }
 
     if (this.state === RideState.DrivingToPickup) {
-      if (distanceXZ(player.root.position, this.activeRide.pickupPoint.position) <= GAME_CONFIG.ride.pickupRadius) {
+      if (this.canCompleteArrival(player, this.activeRide.pickupPoint.position, GAME_CONFIG.ride.pickupRadius)) {
         this.pickUpPassenger(totalViolationPoints);
       }
       return;
@@ -97,7 +97,7 @@ export class RideManager {
       );
       this.collisionCooldown = Math.max(0, this.collisionCooldown - deltaTime);
       this.applySpeedRule(deltaTime, player.getSpeedMph());
-      if (distanceXZ(player.root.position, this.activeRide.destinationPoint.position) <= GAME_CONFIG.ride.destinationRadius) {
+      if (this.canCompleteArrival(player, this.activeRide.destinationPoint.position, GAME_CONFIG.ride.destinationRadius)) {
         this.completeRide();
       }
     }
@@ -180,6 +180,18 @@ export class RideManager {
     return `${Math.round(speedMph)} MPH - TOO FAST`;
   }
 
+  isWaitingForArrivalSpeed(player: PlayerCar): boolean {
+    const target = this.getObjectivePosition();
+    if (!target || !this.activeRide) {
+      return false;
+    }
+    const radius = this.state === RideState.DrivingToPickup
+      ? GAME_CONFIG.ride.pickupRadius
+      : GAME_CONFIG.ride.destinationRadius;
+    return distanceXZ(player.root.position, target) <= radius
+      && player.getSpeedMph() >= GAME_CONFIG.ride.maximumArrivalSpeedMph;
+  }
+
   dispose(): void {
     this.marker?.dispose();
     this.markerMaterial?.dispose();
@@ -207,6 +219,11 @@ export class RideManager {
     this.collisionCooldown = 0;
     this.collisionCount = 0;
     this.showMarker(this.activeRide.destinationPoint.position, new Color3(0.2, 0.95, 0.4), "ride-destination-marker");
+  }
+
+  private canCompleteArrival(player: PlayerCar, target: Vector3, radius: number): boolean {
+    return distanceXZ(player.root.position, target) <= radius
+      && player.getSpeedMph() < GAME_CONFIG.ride.maximumArrivalSpeedMph;
   }
 
   private applySpeedRule(deltaTime: number, speedMph: number): void {

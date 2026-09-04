@@ -168,13 +168,28 @@ export class Game {
         this.player.update(fixedStep, this.input, this.worldQuery, this.fuel.hasFuel, this.damage.damagePercent);
         this.drivingBehavior.update(fixedStep, this.player, this.worldQuery);
         const collision = this.traffic.update(fixedStep, this.player);
-        const citation = this.police.update(
-          fixedStep,
-          this.player.root.position,
-          this.drivingBehavior.rates,
-          this.drivingBehavior.current,
-          this.profile,
-        );
+        let citation = collision.policeCollisionOfficerId === null
+          ? null
+          : this.police.registerPoliceCollision(
+            collision.policeCollisionOfficerId,
+            collision.policeCollisionSeverity,
+            this.profile,
+          );
+        if (!citation) {
+          citation = this.police.update(
+            fixedStep,
+            this.player.root.position,
+            this.drivingBehavior.rates,
+            this.drivingBehavior.current,
+            this.profile,
+          );
+        }
+        if (!citation && collision.collisionViolationSeverity > 0) {
+          this.police.registerTrafficCollision(
+            this.player.root.position,
+            collision.collisionViolationSeverity,
+          );
+        }
         trafficCollisionMph = Math.max(trafficCollisionMph, collision.ridePenaltyMph);
         collisionDamagePercent += collision.damagePercent;
         this.currentPlayerPosition.copyFrom(this.player.root.position);

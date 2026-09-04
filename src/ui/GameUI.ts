@@ -428,9 +428,17 @@ export class GameUI {
     this.damageLabel.textContent = `DAMAGE ${damagePercent}/100`;
     this.damageFill.style.width = `${damagePercent}%`;
     const policePercent = Math.round(police.warning.progress * 100);
-    this.policeMeter.classList.toggle("hidden", policePercent <= 0);
+    this.policeMeter.classList.toggle("hidden", police.warning.phase === "idle" && policePercent <= 0);
     this.policeMeter.classList.toggle("observing", police.warning.activelyObserving);
-    this.policeMeterLabel.textContent = police.warning.activelyObserving ? "POLICE OBSERVING" : "POLICE SUSPICION";
+    if (police.warning.phase === "pursuit") {
+      this.policeMeterLabel.textContent = "POLICE PURSUIT";
+    } else if (police.warning.phase === "busting") {
+      this.policeMeterLabel.textContent = "POLICE BUSTING";
+    } else {
+      this.policeMeterLabel.textContent = police.warning.activelyObserving
+        ? "POLICE OBSERVING"
+        : "POLICE SUSPICION";
+    }
     this.policeMeterFill.style.width = `${policePercent}%`;
     this.refuelStatus.classList.toggle("hidden", !fuel.isRefueling);
     this.updateRefuelOverlay(fuel, fuelPercent, walletMoney);
@@ -978,12 +986,16 @@ export class GameUI {
     const distance = target
       ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
       : 0;
+    const arrivalWarning = ride.isWaitingForArrivalSpeed(player)
+      ? `<div>SLOW BELOW ${GAME_CONFIG.ride.maximumArrivalSpeedMph} MPH</div>`
+      : "";
     if (ride.state === RideState.DrivingToPickup) {
       const category = getMissionLicense(ride.activeRide.missionCategoryId);
       return `
         <div class="objective">${category?.name.toUpperCase() ?? "RIDE"} · PICK UP: ${ride.activeRide.passengerName}</div>
         <div>${ride.activeRide.passengerType}</div>
         <div>${distance} m</div>
+        ${arrivalWarning}
       `;
     }
     return `
@@ -993,6 +1005,7 @@ export class GameUI {
       <div>TIP: ${this.money(ride.getCurrentTip())}</div>
       ${ride.violationTipPenaltyPercent > 0 ? `<div>ILLEGAL DRIVING: ${ride.currentViolationPoints.toFixed(1)} PTS · TIP -${Math.round(ride.violationTipPenaltyPercent)}%</div>` : ""}
       <div>${distance} m</div>
+      ${arrivalWarning}
     `;
   }
 

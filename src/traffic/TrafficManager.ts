@@ -114,6 +114,9 @@ export class TrafficManager {
     const maximumCollisionDistance = playerBoundingRadius + trafficBoundingRadius;
     let ridePenaltyMph = 0;
     let damagePercent = 0;
+    let collisionViolationSeverity = 0;
+    let policeCollisionOfficerId: number | null = null;
+    let policeCollisionSeverity = 0;
     this.queryNearby(
       playerX,
       playerZ,
@@ -152,17 +155,42 @@ export class TrafficManager {
       const relativeVelocityZ = player.getVelocityZ() - car.getVelocityZ();
       const relativeSpeedMph = Math.hypot(relativeVelocityX, relativeVelocityZ) * GAME_CONFIG.ride.mphPerWorldUnitPerSecond;
       const closingSpeedMph = Math.max(0, -(relativeVelocityX * nx + relativeVelocityZ * nz) * GAME_CONFIG.ride.mphPerWorldUnitPerSecond);
+      const playerImpactSpeedMph = Math.max(
+        0,
+        -(player.getVelocityX() * nx + player.getVelocityZ() * nz)
+          * GAME_CONFIG.ride.mphPerWorldUnitPerSecond,
+      );
       const directness = relativeSpeedMph > 0 ? closingSpeedMph / relativeSpeedMph : 0;
       ridePenaltyMph = Math.max(ridePenaltyMph, player.getSpeedMph());
       const carIndex = this.indexByCar.get(car) ?? -1;
       if (carIndex >= 0 && this.damageCooldownByCar[carIndex] <= 0) {
+        const impactSeverity = Math.min(
+          1,
+          closingSpeedMph / GAME_CONFIG.police.collisionFullSeveritySpeedMph,
+        );
         damagePercent += collisionDamagePercent(closingSpeedMph, directness);
+        if (car.role === "police" && policeCollisionOfficerId === null) {
+          policeCollisionOfficerId = car.id;
+          policeCollisionSeverity = impactSeverity;
+        }
+        if (playerImpactSpeedMph >= GAME_CONFIG.police.collisionMinimumImpactSpeedMph) {
+          collisionViolationSeverity = Math.max(
+            collisionViolationSeverity,
+            Math.min(1, playerImpactSpeedMph / GAME_CONFIG.police.collisionFullSeveritySpeedMph),
+          );
+        }
         this.damageCooldownByCar[carIndex] = GAME_CONFIG.traffic.damageCooldownSeconds;
       }
       player.applyTrafficCollision(nx, nz, depth);
       car.push(-nx * depth * 0.35, -nz * depth * 0.35);
     }
-    return { ridePenaltyMph, damagePercent };
+    return {
+      ridePenaltyMph,
+      damagePercent,
+      collisionViolationSeverity,
+      policeCollisionOfficerId,
+      policeCollisionSeverity,
+    };
   }
 
   private rebuildSpatialHash(): void {
@@ -228,7 +256,7 @@ export class TrafficManager {
       let dx = car.mesh.position.x - player.root.position.x;
       let dz = car.mesh.position.z - player.root.position.z;
       let distanceSquared = dx * dx + dz * dz;
-      if (distanceSquared > GAME_CONFIG.traffic.recycleRadius ** 2) {
+      if (!car.isPursuing && distanceSquared > GAME_CONFIG.traffic.recycleRadius ** 2) {
         this.recycleCar(car, index, player);
         dx = car.mesh.position.x - player.root.position.x;
         dz = car.mesh.position.z - player.root.position.z;
