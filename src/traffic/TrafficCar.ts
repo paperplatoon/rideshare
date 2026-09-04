@@ -119,10 +119,16 @@ export class TrafficCar {
   }
 
   static createPrototype(scene: import("@babylonjs/core/scene").Scene, material: StandardMaterial, index: number): Mesh {
-    const body = MeshBuilder.CreateBox(`traffic-body-source-${index}`, { width: 5.4, height: 1.5, depth: 9.4 }, scene);
+    const width = GAME_CONFIG.traffic.vehicleWidth;
+    const length = GAME_CONFIG.traffic.vehicleLength;
+    const body = MeshBuilder.CreateBox(`traffic-body-source-${index}`, { width, height: 1.5, depth: length }, scene);
     body.material = material;
-    const cabin = MeshBuilder.CreateBox(`traffic-cabin-source-${index}`, { width: 3.8, height: 1.05, depth: 3.3 }, scene);
-    cabin.position.set(0, 1.05, -0.35);
+    const cabin = MeshBuilder.CreateBox(`traffic-cabin-source-${index}`, {
+      width: width * 0.704,
+      height: 1.05,
+      depth: length * 0.351,
+    }, scene);
+    cabin.position.set(0, 1.05, -length * 0.037);
     cabin.material = material;
     const prototype = Mesh.MergeMeshes([body, cabin], true, true, undefined, false, false)!;
     prototype.name = `traffic-source-${index}`;
@@ -132,15 +138,21 @@ export class TrafficCar {
   }
 
   static createPolicePrototype(scene: import("@babylonjs/core/scene").Scene, material: StandardMaterial): Mesh {
-    const body = MeshBuilder.CreateBox("police-body-source", { width: 5.4, height: 1.5, depth: 9.4 }, scene);
-    const cabin = MeshBuilder.CreateBox("police-cabin-source", { width: 3.8, height: 1.05, depth: 3.3 }, scene);
-    cabin.position.set(0, 1.05, -0.35);
+    const width = GAME_CONFIG.traffic.vehicleWidth;
+    const length = GAME_CONFIG.traffic.vehicleLength;
+    const body = MeshBuilder.CreateBox("police-body-source", { width, height: 1.5, depth: length }, scene);
+    const cabin = MeshBuilder.CreateBox("police-cabin-source", {
+      width: width * 0.704,
+      height: 1.05,
+      depth: length * 0.351,
+    }, scene);
+    cabin.position.set(0, 1.05, -length * 0.037);
     const leftLight = MeshBuilder.CreateBox("police-light-red-source", { width: 1.25, height: 0.34, depth: 0.72 }, scene);
     leftLight.position.set(-0.68, 1.72, -0.35);
     const rightLight = MeshBuilder.CreateBox("police-light-blue-source", { width: 1.25, height: 0.34, depth: 0.72 }, scene);
     rightLight.position.set(0.68, 1.72, -0.35);
-    const bumper = MeshBuilder.CreateBox("police-bumper-source", { width: 5.5, height: 0.38, depth: 0.42 }, scene);
-    bumper.position.set(0, -0.25, -4.68);
+    const bumper = MeshBuilder.CreateBox("police-bumper-source", { width: width + 0.1, height: 0.38, depth: 0.42 }, scene);
+    bumper.position.set(0, -0.25, -length / 2 + 0.02);
 
     TrafficCar.applyVertexColor(body, new Color4(0.035, 0.055, 0.075, 1));
     TrafficCar.applyVertexColor(cabin, new Color4(0.88, 0.91, 0.92, 1));

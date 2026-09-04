@@ -71,6 +71,49 @@ body {
   background: rgba(8, 12, 15, 0.55);
 }
 
+.pause-balance {
+  margin-top: 18px;
+  color: #75f0b0;
+  font-weight: 900;
+}
+
+.pause-license {
+  margin-top: 16px;
+  padding-block: 16px;
+  border-block: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.pause-license-title {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.pause-license-description,
+.pause-feedback {
+  margin-top: 5px;
+  color: #b8c5ca;
+  font-size: 13px;
+}
+
+.pause-license button {
+  margin-top: 12px;
+}
+
+.pause-feedback {
+  min-height: 18px;
+  color: #f2c14e;
+  font-weight: 800;
+}
+
+.pause-reset {
+  background: #c84f4f;
+  color: #fff;
+}
+
+.pause-reset:hover {
+  background: #df6262;
+}
+
 button {
   margin-top: 18px;
   border: 0;
@@ -454,7 +497,7 @@ button:disabled {
 .phone-tabs {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   background: rgba(0, 0, 0, 0.28);

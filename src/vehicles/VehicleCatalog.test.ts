@@ -9,6 +9,9 @@ describe("VehicleCatalog", () => {
     expect(VEHICLE_CATALOG.map((vehicle) => vehicle.price)).toEqual(
       [...VEHICLE_CATALOG].map((vehicle) => vehicle.price).sort((a, b) => a - b),
     );
+    expect(Object.fromEntries(VEHICLE_CATALOG.map(({ id, price }) => [id, price]))).toEqual(
+      GAME_CONFIG.progression.vehiclePrices,
+    );
   });
 
   it("keeps the starter at current handling and maps the elite to target performance", () => {

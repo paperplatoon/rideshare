@@ -4,9 +4,12 @@ export const GAME_CONFIG = {
     maxSubSteps: 3,
   },
   world: {
+    // World-space distances use engine units. Offer distances convert these units to meters below.
     blocksX: 10,
     blocksZ: 10,
+    // Center-to-center distance between neighboring roads, in world units.
     blockSize: 240,
+    // Total curb-to-curb width and one sidewalk's width, in world units.
     roadWidth: 75,
     sidewalkWidth: 3,
     boundaryPadding: 30,
@@ -32,8 +35,10 @@ export const GAME_CONFIG = {
     },
   },
   player: {
+    // Vehicle dimensions and collision radius are in world units.
     length: 10.2,
     width: 5.8,
+    // Linear speeds are world units/second; acceleration and braking are world units/second squared.
     acceleration: 15.2,
     highSpeedAcceleration: 4.1,
     accelerationFalloffPower: 1.45,
@@ -41,8 +46,10 @@ export const GAME_CONFIG = {
     braking: 18,
     rollingResistance: 0.75,
     aerodynamicDrag: 0.00022,
+    // This controls physical top speed. Displayed MPH is this value times mphPerWorldUnitPerSecond.
     maxForwardSpeed: 90,
     maxReverseSpeed: 18,
+    // Yaw rates are radians/second. Grip and steering settings control how quickly the car reaches them.
     lowSpeedYawRate: 1.45,
     highSpeedYawRate: 0.68,
     steeringResponse: 5.6,
@@ -81,6 +88,7 @@ export const GAME_CONFIG = {
     pedalReturnRate: 8,
   },
   camera: {
+    // Camera distances and look-ahead are in world units. FOV values are radians.
     distance: 20,
     height: 15,
     lookAhead: 18,
@@ -92,9 +100,14 @@ export const GAME_CONFIG = {
   },
   traffic: {
     vehicleCount: 120,
+    // NPC body and collision dimensions are local width (side-to-side/X) and length (front-to-back/Z).
+    vehicleWidth: 5.4,
+    vehicleLength: 9.4,
+    hitboxWidth: 5.4,
+    hitboxLength: 9.4,
+    // Traffic speeds are world units/second and use the same MPH conversion as the player.
     minSpeed: 10,
     maxSpeed: 17,
-    radius: 3.2,
     lookAheadDistance: 16,
     spatialCellSize: 48,
     playerCollisionQueryRadius: 24,
@@ -105,6 +118,7 @@ export const GAME_CONFIG = {
     respawnMinRadius: 650,
     respawnMaxRadius: 900,
     damageCooldownSeconds: 0.6,
+    // Distance from each road centerline to the center of its directional lane.
     laneOffset: 18.75,
   },
   drivingRules: {
@@ -120,10 +134,10 @@ export const GAME_CONFIG = {
   police: {
     vehicleCount: 10,
     updateIntervalSeconds: 0.1,
-    forwardRange: 140,
-    rearRange: 70,
+    forwardRange: 340,
+    rearRange: 110,
     forwardHalfAngleDegrees: 45,
-    rearHalfAngleDegrees: 20,
+    rearHalfAngleDegrees: 30,
     citationThreshold: 4,
     suspicionDecayPerSecond: 2,
     citationCooldownSeconds: 10,
@@ -139,7 +153,32 @@ export const GAME_CONFIG = {
     maxUpgradeLevel: 50,
     upgradePercentPerLevel: 0.02,
     upgradeCostBase: 100,
+    additionalCostPerUpgradeLevel: 100,
     equipMaxSpeedMph: 1,
+    missionLicenseUnlockCosts: {
+      rideshare: 0,
+      taxi: 300,
+      rideshare_silver: 3000,
+      package_delivery: 1000,
+    },
+    vehiclePrices: {
+      starter: 0,
+      "used-compact": 2000,
+      "old-sedan": 5000,
+      hatchback: 11000,
+      "modern-sedan": 18000,
+      "sport-compact": 27000,
+      "touring-sedan": 38000,
+      "hot-hatch": 52000,
+      coupe: 70000,
+      "muscle-car": 90000,
+      "sport-sedan": 115000,
+      "performance-coupe": 140000,
+      "grand-tourer": 165000,
+      "exotic-coupe": 195000,
+      supercar: 220000,
+      "elite-sports-car": 250000,
+    },
     eliteVehicleStats: {
       acceleration: 24,
       topSpeed: 157.5,
@@ -148,11 +187,11 @@ export const GAME_CONFIG = {
     },
   },
   fuel: {
-    capacitySecondsAtCruise: 450,
+    capacitySecondsAtCruise: 500,
     lowFuelThreshold: 0.2,
     refuelRadius: 16,
     refuelRatePerSecond: 0.2,
-    fullTankCost: 10,
+    fullTankCost: 30,
     refuelStopSpeedMph: 1,
     idleDrainMultiplier: 0.08,
     minMovingDrainMultiplier: 0.35,
@@ -163,7 +202,7 @@ export const GAME_CONFIG = {
     shopCount: 3,
     repairRadius: 16,
     repairRatePerSecond: 0.2,
-    fullRepairCost: 100,
+    fullRepairCost: 200,
     repairStopSpeedMph: 1,
     damageScaleSpeedMph: 60,
     maxCollisionDamage: 0.26,
@@ -171,38 +210,57 @@ export const GAME_CONFIG = {
   map: {
     refreshSeconds: 0.5,
   },
+  packageDelivery: {
+    offerSeed: 31991,
+    ratePerMeter: 0.04,
+    fareDecayPercentPerSecond: 0.005,
+    // Offer-generation distances are meters after applying ride.metersPerWorldUnit.
+    maxPickupDistance: 1200,
+    minDropoffDistance: 1400,
+    maxDropoffDistance: 2400,
+    // Arrival radii are physical world units so marker size and collision distance stay aligned.
+    pickupRadius: 7,
+    dropoffRadius: 7,
+    possessionFine: 200,
+    resultSeconds: 3,
+  },
   ride: {
     offerCount: 3,
     offerLifetimeSeconds: 60,
     offerDistanceRefreshSeconds: 1,
-    maxPickupDistance: 300,
-    minTripDistance: 190,
+    maxPickupDistance: 400,
+    minTripDistance: 350,
+    // Trip-tier distances are meters after applying metersPerWorldUnit.
     tripTiers: {
       short: {
-        minDistance: 400,
-        maxDistance: 750,
+        minDistance: 350,
+        maxDistance: 650,
       },
       medium: {
-        minDistance: 800,
-        maxDistance: 1500,
+        minDistance: 660,
+        maxDistance: 1100,
       },
       long: {
-        minDistance: 1550,
-        maxDistance: 3000,
+        minDistance: 1101,
+        maxDistance: 2200,
       },
     },
+    // Offer distances = world distance * this value. It does not change physical vehicle motion.
     metersPerWorldUnit: 1,
-    mphPerWorldUnitPerSecond: 0.538,
+    // Displayed MPH = physical speed in world units/second * this value. Changing it also changes
+    // speed-based rules and damage because those systems intentionally consume the displayed MPH.
+    mphPerWorldUnitPerSecond: 0.78,
+    // Arrival radii remain physical world units.
     pickupRadius: 7,
     destinationRadius: 7,
     rideResultSeconds: 2,
     fare: {
-      baseFare: 3.75,
-      ratePerMeter: 0.01,
+      baseFare: 9.75,
+      ratePerMeter: 0.015,
       pickupDistanceWeight: 0.35,
       randomMultiplierMin: 0.7,
       randomMultiplierMax: 1.3,
-      maxTipPercent: 0.4,
+      maxTipPercent: 0.5,
       tipDecayPercentPerSecond: 0.005,
       violationTipPenaltyPerPoint: 0.02,
     },
@@ -217,7 +275,7 @@ export const GAME_CONFIG = {
       collisionSpeedThresholdMph: 12,
       normal: {
         collisionPenalty: 40,
-        maxSafeSpeedMph: 80,
+        maxSafeSpeedMph: 60,
         speedPenaltyPerSecond: 1,
       },
       scaredyCat: {

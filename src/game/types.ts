@@ -79,6 +79,9 @@ export interface PoliceCitation {
   assessedFine: number;
   amountPaid: number;
   remainingBalance: number;
+  packageConfiscated?: boolean;
+  possessionFine?: number;
+  possessionAmountPaid?: number;
 }
 
 export interface RoadNode {

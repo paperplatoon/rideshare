@@ -8,6 +8,7 @@ import { seededRandom } from "../utils/math";
 import { TrafficCar, type Direction } from "./TrafficCar";
 import type { PlayerCar } from "../player/PlayerCar";
 import { collisionDamagePercent } from "../player/DamageManager";
+import { findOrientedBoxCollision } from "./OrientedBoxCollision";
 
 export class TrafficManager {
   readonly cars: TrafficCar[] = [];
@@ -105,13 +106,18 @@ export class TrafficManager {
   private resolvePlayerCollisions(player: PlayerCar): TrafficCollisionInfo {
     const playerX = player.root.position.x;
     const playerZ = player.root.position.z;
-    const playerRadius = player.colliderRadius;
+    const playerBoundingRadius = Math.hypot(player.vehicleWidth / 2, player.vehicleLength / 2);
+    const trafficBoundingRadius = Math.hypot(
+      GAME_CONFIG.traffic.hitboxWidth / 2,
+      GAME_CONFIG.traffic.hitboxLength / 2,
+    );
+    const maximumCollisionDistance = playerBoundingRadius + trafficBoundingRadius;
     let ridePenaltyMph = 0;
     let damagePercent = 0;
     this.queryNearby(
       playerX,
       playerZ,
-      GAME_CONFIG.traffic.playerCollisionQueryRadius,
+      Math.max(GAME_CONFIG.traffic.playerCollisionQueryRadius, maximumCollisionDistance),
       this.playerQueryResults,
     );
     const nearbyCars = this.playerQueryResults;
@@ -119,14 +125,29 @@ export class TrafficManager {
     for (const car of nearbyCars) {
       const dx = playerX - car.mesh.position.x;
       const dz = playerZ - car.mesh.position.z;
-      const distance = Math.hypot(dx, dz);
-      const minDistance = playerRadius + GAME_CONFIG.traffic.radius;
-      if (distance >= minDistance || distance < 0.001) {
+      if (dx * dx + dz * dz >= maximumCollisionDistance * maximumCollisionDistance) {
         continue;
       }
-      const nx = dx / distance;
-      const nz = dz / distance;
-      const depth = minDistance - distance;
+      const collision = findOrientedBoxCollision(
+        {
+          x: playerX,
+          z: playerZ,
+          heading: player.heading,
+          halfWidth: player.vehicleWidth / 2,
+          halfLength: player.vehicleLength / 2,
+        },
+        {
+          x: car.mesh.position.x,
+          z: car.mesh.position.z,
+          heading: car.mesh.rotation.y,
+          halfWidth: GAME_CONFIG.traffic.hitboxWidth / 2,
+          halfLength: GAME_CONFIG.traffic.hitboxLength / 2,
+        },
+      );
+      if (!collision) {
+        continue;
+      }
+      const { normalX: nx, normalZ: nz, depth } = collision;
       const relativeVelocityX = player.getVelocityX() - car.getVelocityX();
       const relativeVelocityZ = player.getVelocityZ() - car.getVelocityZ();
       const relativeSpeedMph = Math.hypot(relativeVelocityX, relativeVelocityZ) * GAME_CONFIG.ride.mphPerWorldUnitPerSecond;

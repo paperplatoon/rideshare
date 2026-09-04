@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { GAME_CONFIG } from "../game/config";
 import { PassengerType, type RideResult } from "../game/types";
 import { ProgressionStore, type KeyValueStorage } from "../progression/ProgressionStore";
+import { getUpgradeCost } from "../progression/UpgradeSystem";
 import { PlayerProfile } from "./PlayerProfile";
 
 describe("PlayerProfile", () => {
@@ -41,7 +42,9 @@ describe("PlayerProfile", () => {
     expect(profile.purchaseUpgrade("topSpeed")).toBe(true);
 
     const reloaded = createProfile(storage);
-    expect(reloaded.money).toBe(19_900);
+    expect(reloaded.money).toBe(
+      25_000 - GAME_CONFIG.progression.vehiclePrices["used-compact"] - getUpgradeCost(1),
+    );
     expect(reloaded.ownedVehicleIds).toEqual(["starter", "used-compact"]);
     expect(reloaded.equippedVehicleId).toBe("used-compact");
     expect(reloaded.upgrades.topSpeed).toBe(1);
@@ -54,7 +57,10 @@ describe("PlayerProfile", () => {
     profile.addTemporaryDebugMoney(25_000);
     expect(profile.money).toBe(GAME_CONFIG.progression.startingMoney + 25_000);
     expect(profile.purchaseMissionLicense("taxi")).toBe(true);
-    expect(profile.money).toBe(GAME_CONFIG.progression.startingMoney + 24_500);
+    expect(profile.money).toBe(
+      GAME_CONFIG.progression.startingMoney + 25_000
+      - GAME_CONFIG.progression.missionLicenseUnlockCosts.taxi,
+    );
 
     const reloaded = createProfile(storage);
     expect(reloaded.money).toBe(GAME_CONFIG.progression.startingMoney);
@@ -87,15 +93,25 @@ describe("PlayerProfile", () => {
   it("purchases mission licenses independently and persists ownership", () => {
     const storage = new MemoryStorage();
     const profile = createProfile(storage);
-    profile.money = 4_000;
+    const expectedRemainder = 500;
+    profile.money = GAME_CONFIG.progression.missionLicenseUnlockCosts.rideshare_silver
+      + GAME_CONFIG.progression.missionLicenseUnlockCosts.taxi
+      + GAME_CONFIG.progression.missionLicenseUnlockCosts.package_delivery
+      + expectedRemainder;
 
     expect(profile.purchaseMissionLicense("rideshare_silver")).toBe(true);
     expect(profile.purchaseMissionLicense("taxi")).toBe(true);
+    expect(profile.purchaseMissionLicense("package_delivery")).toBe(true);
     expect(profile.purchaseMissionLicense("taxi")).toBe(false);
-    expect(profile.money).toBe(500);
+    expect(profile.money).toBe(expectedRemainder);
 
     const reloaded = createProfile(storage);
-    expect(reloaded.ownedMissionLicenseIds).toEqual(["rideshare", "rideshare_silver", "taxi"]);
+    expect(reloaded.ownedMissionLicenseIds).toEqual([
+      "rideshare",
+      "rideshare_silver",
+      "taxi",
+      "package_delivery",
+    ]);
   });
 
   it("rejects duplicate, unknown, and unaffordable purchases", () => {
@@ -215,13 +231,24 @@ describe("PlayerProfile", () => {
   it("does not recreate a cleared save during disposal", () => {
     const storage = new MemoryStorage();
     const profile = createProfile(storage);
-    profile.addMoney(10);
+    profile.money = 10_000;
+    profile.purchaseMissionLicense("taxi");
+    profile.purchaseVehicle("used-compact", true);
+    profile.purchaseUpgrade("acceleration");
+    profile.completeRide(rideResult(10, "Reset Rider"));
     expect(storage.getItem(GAME_CONFIG.progression.saveKey)).not.toBeNull();
 
     profile.clearSave();
     profile.dispose();
 
     expect(storage.getItem(GAME_CONFIG.progression.saveKey)).toBeNull();
+    const reset = createProfile(storage);
+    expect(reset.money).toBe(GAME_CONFIG.progression.startingMoney);
+    expect(reset.ownedVehicleIds).toEqual(["starter"]);
+    expect(reset.equippedVehicleId).toBe("starter");
+    expect(reset.ownedMissionLicenseIds).toEqual(["rideshare"]);
+    expect(reset.upgrades).toEqual({ acceleration: 0, topSpeed: 0, turning: 0, braking: 0 });
+    expect(reset.rideHistory).toEqual([]);
   });
 });
 

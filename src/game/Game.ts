@@ -28,6 +28,7 @@ import { STARTER_VEHICLE, getVehicleDefinition } from "../vehicles/VehicleCatalo
 import type { VehicleStatKey } from "../vehicles/VehicleTypes";
 import { getMissionLicense, type MissionLicenseId } from "../missions/MissionLicenseCatalog";
 import { PoliceManager } from "../police/PoliceManager";
+import { PackageDeliveryManager } from "../delivery/PackageDeliveryManager";
 
 export class Game {
   private scene: Scene;
@@ -42,6 +43,7 @@ export class Game {
   private damage: DamageManager | null = null;
   private traffic: TrafficManager | null = null;
   private police: PoliceManager | null = null;
+  private packageDelivery: PackageDeliveryManager | null = null;
   private profile: PlayerProfile | null = null;
   private activity: ActivityManager | null = null;
   private drivingBehavior: DrivingBehaviorManager | null = null;
@@ -64,6 +66,7 @@ export class Game {
     this.ui = new GameUI(uiRoot, {
       start: () => this.startShift(),
       acceptRide: (categoryId, id) => this.acceptRide(categoryId, id),
+      acceptPackageDelivery: (id) => this.acceptPackageDelivery(id),
       purchaseMissionLicense: (id) => this.purchaseMissionLicense(id),
       purchaseVehicle: (id) => this.purchaseVehicle(id),
       equipVehicle: (id) => this.equipVehicle(id),
@@ -76,7 +79,7 @@ export class Game {
       debugSetUpgrade: (stat, level) => this.debugSetUpgrade(stat, level),
       debugEquipVehicle: (id) => this.debugEquipVehicle(id),
       debugTogglePoliceVision: () => this.police?.toggleDebugVision() ?? false,
-      debugResetProgression: () => this.debugResetProgression(),
+      resetProgression: () => this.resetProgression(),
     });
     this.performanceMonitor = new PerformanceMonitor(engine, this.scene, uiRoot);
     this.buildSimulation();
@@ -117,7 +120,7 @@ export class Game {
   }
 
   private update(deltaTime: number): void {
-    if (!this.player || !this.input || !this.rideOffers || !this.ride || !this.fuel || !this.damage || !this.traffic || !this.police || !this.chaseCamera || !this.town || !this.activity || !this.profile || !this.drivingBehavior) {
+    if (!this.player || !this.input || !this.rideOffers || !this.ride || !this.packageDelivery || !this.fuel || !this.damage || !this.traffic || !this.police || !this.chaseCamera || !this.town || !this.activity || !this.profile || !this.drivingBehavior) {
       if (this.chaseCamera) {
         this.chaseCamera.update(deltaTime);
       }
@@ -134,7 +137,7 @@ export class Game {
         this.physicsAccumulator = 0;
         this.input.resetDrivingState();
         this.ui.closePhone();
-        this.ui.showPaused();
+        this.ui.showPaused(this.profile);
       }
     }
 
@@ -178,6 +181,8 @@ export class Game {
         this.currentPlayerHeading = this.player.heading;
         this.physicsAccumulator -= fixedStep;
         if (citation) {
+          this.packageDelivery.confiscateForPolice(citation);
+          this.activity.update();
           this.beginCitation(citation);
           citationIssued = true;
           break;
@@ -195,6 +200,7 @@ export class Game {
       this.ui.update(
         this.rideOffers,
         this.ride,
+        this.packageDelivery,
         this.player,
         this.fuel,
         this.damage,
@@ -212,6 +218,7 @@ export class Game {
       this.profile.ownedMissionLicenseIds,
     );
     this.ride.update(deltaTime, this.player, true, this.drivingBehavior.totals.total);
+    this.packageDelivery.update(deltaTime);
     this.activity.update();
     this.fuel.update(deltaTime, this.player, this.town.gasStations, this.profile, this.ui.isRefuelHeld);
     this.damage.update(deltaTime, this.player, this.town.autoBodyShops, this.profile, this.ui.isRepairHeld);
@@ -223,6 +230,7 @@ export class Game {
     this.ui.update(
       this.rideOffers,
       this.ride,
+      this.packageDelivery,
       this.player,
       this.fuel,
       this.damage,
@@ -261,6 +269,12 @@ export class Game {
     for (const categoryId of this.profile.ownedMissionLicenseIds) this.rideOffers.ensurePool(categoryId);
     this.damage = new DamageManager();
     this.ride = new RideManager(this.scene, this.rideOffers, this.profile);
+    this.packageDelivery = new PackageDeliveryManager(
+      this.scene,
+      this.town.deliveryPoints,
+      this.player,
+      this.profile,
+    );
     this.activity = new ActivityManager();
     this.drivingBehavior = new DrivingBehaviorManager();
     this.fuel = new FuelManager();
@@ -272,12 +286,14 @@ export class Game {
   private disposeSimulation(): void {
     this.input?.dispose();
     this.ride?.dispose();
+    this.packageDelivery?.dispose();
     this.police?.dispose();
     this.traffic?.dispose();
     this.profile?.dispose();
     this.input = null;
     this.rideOffers = null;
     this.ride = null;
+    this.packageDelivery = null;
     this.profile = null;
     this.activity = null;
     this.drivingBehavior = null;
@@ -302,6 +318,18 @@ export class Game {
       return false;
     }
     return this.activity.start(this.ride, () => this.ride!.acceptRide(categoryId, id));
+  }
+
+  private acceptPackageDelivery(id: string): boolean {
+    if (
+      this.state !== GameState.Playing
+      || !this.packageDelivery
+      || !this.activity
+      || !this.profile?.ownsMissionLicense("package_delivery")
+    ) {
+      return false;
+    }
+    return this.activity.start(this.packageDelivery, () => this.packageDelivery!.acceptOffer(id));
   }
 
   private purchaseMissionLicense(id: MissionLicenseId): string {
@@ -376,7 +404,7 @@ export class Game {
     this.capturePlayerPhysicsPose();
   }
 
-  private debugResetProgression(): void {
+  private resetProgression(): void {
     this.profile?.clearSave();
     window.location.reload();
   }

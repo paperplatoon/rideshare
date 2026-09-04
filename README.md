@@ -24,7 +24,7 @@ npm test
 - `D` / `ArrowRight`: steer right
 - `P`: open or close the ride app
 - `M`: open or close the map
-- `Escape`: pause or resume
+- `Escape`: pause or resume; the pause menu can reset all saved progression
 - `R`: reset the car to a nearby road
 
 ## Gameplay
@@ -48,7 +48,7 @@ The game is split into small systems under `src/`:
 - `police`: officer visibility, suspicion, fines, and citation state
 - `ui`: HTML/CSS start screen, HUD, direction indicator, and results screen
 
-Major tuning values live in `src/game/config.ts`.
+Major tuning values live in `src/game/config.ts`, including upgrade costs, mission-license unlock costs, vehicle prices, package-delivery payouts, distance bands, decay, and possession fines.
 
 Append `?debug=1` to the local URL to show performance metrics and progression controls for money, car ownership, equipped vehicle, upgrade levels, and save reset.
 

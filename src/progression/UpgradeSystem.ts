@@ -7,7 +7,9 @@ export function getUpgradeCost(nextLevel: number): number {
   if (nextLevel < 1 || nextLevel > GAME_CONFIG.progression.maxUpgradeLevel) {
     return 0;
   }
-  return GAME_CONFIG.progression.upgradeCostBase * nextLevel * (nextLevel + 1) / 2;
+  const previousLevelCount = nextLevel * (nextLevel - 1) / 2;
+  return GAME_CONFIG.progression.upgradeCostBase * nextLevel
+    + GAME_CONFIG.progression.additionalCostPerUpgradeLevel * previousLevelCount;
 }
 
 export function getUpgradeMultiplier(level: number): number {

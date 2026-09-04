@@ -23,31 +23,31 @@ const STARTER_STATS: VehicleStats = {
 };
 
 const ELITE_STATS: VehicleStats = GAME_CONFIG.progression.eliteVehicleStats;
+type ConfiguredVehicleId = keyof typeof GAME_CONFIG.progression.vehiclePrices;
 
 const profiles: Array<{
-  id: string;
+  id: ConfiguredVehicleId;
   name: string;
-  price: number;
   ratings: VehicleRatings;
   color: string;
   size: [number, number, number];
 }> = [
-  { id: "starter", name: "Starter Beater", price: 0, ratings: { topSpeed: 45, acceleration: 45, turning: 55, braking: 45 }, color: "#e6b91f", size: [10.2, 5.8, 1.6] },
-  { id: "used-compact", name: "Used Compact", price: 5000, ratings: { topSpeed: 50, acceleration: 52, turning: 62, braking: 55 }, color: "#4ca66a", size: [9.1, 5.4, 1.65] },
-  { id: "old-sedan", name: "Old Sedan", price: 8000, ratings: { topSpeed: 56, acceleration: 52, turning: 52, braking: 58 }, color: "#a59075", size: [11.1, 5.8, 1.65] },
-  { id: "hatchback", name: "Hatchback", price: 12000, ratings: { topSpeed: 58, acceleration: 60, turning: 68, braking: 62 }, color: "#3e8fc9", size: [9.5, 5.6, 1.65] },
-  { id: "modern-sedan", name: "Modern Sedan", price: 18000, ratings: { topSpeed: 63, acceleration: 61, turning: 60, braking: 68 }, color: "#d8dde0", size: [11.3, 5.9, 1.55] },
-  { id: "sport-compact", name: "Sport Compact", price: 27000, ratings: { topSpeed: 67, acceleration: 70, turning: 76, braking: 70 }, color: "#ef6b38", size: [9.7, 5.8, 1.45] },
-  { id: "touring-sedan", name: "Touring Sedan", price: 38000, ratings: { topSpeed: 70, acceleration: 68, turning: 68, braking: 76 }, color: "#4267a8", size: [11.7, 6, 1.55] },
-  { id: "hot-hatch", name: "Hot Hatch", price: 52000, ratings: { topSpeed: 73, acceleration: 78, turning: 82, braking: 74 }, color: "#d83c3c", size: [9.4, 5.8, 1.5] },
-  { id: "coupe", name: "Coupe", price: 70000, ratings: { topSpeed: 78, acceleration: 80, turning: 77, braking: 77 }, color: "#5d4cc2", size: [10.5, 6, 1.35] },
-  { id: "muscle-car", name: "Muscle Car", price: 90000, ratings: { topSpeed: 85, acceleration: 88, turning: 67, braking: 70 }, color: "#26282b", size: [11.2, 6.5, 1.45] },
-  { id: "sport-sedan", name: "Sport Sedan", price: 115000, ratings: { topSpeed: 84, acceleration: 83, turning: 82, braking: 84 }, color: "#2c8b80", size: [11.2, 6.1, 1.45] },
-  { id: "performance-coupe", name: "Performance Coupe", price: 140000, ratings: { topSpeed: 90, acceleration: 88, turning: 86, braking: 85 }, color: "#f0a62e", size: [10.6, 6.2, 1.3] },
-  { id: "grand-tourer", name: "Grand Tourer", price: 165000, ratings: { topSpeed: 93, acceleration: 87, turning: 82, braking: 88 }, color: "#6d7882", size: [11.5, 6.3, 1.35] },
-  { id: "exotic-coupe", name: "Exotic Coupe", price: 195000, ratings: { topSpeed: 96, acceleration: 94, turning: 91, braking: 91 }, color: "#e14932", size: [10.2, 6.4, 1.15] },
-  { id: "supercar", name: "Supercar", price: 220000, ratings: { topSpeed: 98, acceleration: 97, turning: 95, braking: 95 }, color: "#17a5a1", size: [10.1, 6.5, 1.1] },
-  { id: "elite-sports-car", name: "Elite Sports Car", price: 250000, ratings: { topSpeed: 100, acceleration: 100, turning: 100, braking: 100 }, color: "#f2f4f5", size: [10, 6.6, 1.05] },
+  { id: "starter", name: "Starter Beater", ratings: { topSpeed: 45, acceleration: 45, turning: 55, braking: 45 }, color: "#e6b91f", size: [10.2, 5.8, 1.6] },
+  { id: "used-compact", name: "Used Compact", ratings: { topSpeed: 50, acceleration: 52, turning: 62, braking: 55 }, color: "#4ca66a", size: [9.1, 5.4, 1.65] },
+  { id: "old-sedan", name: "Old Sedan", ratings: { topSpeed: 56, acceleration: 52, turning: 52, braking: 58 }, color: "#a59075", size: [11.1, 5.8, 1.65] },
+  { id: "hatchback", name: "Hatchback", ratings: { topSpeed: 58, acceleration: 60, turning: 68, braking: 62 }, color: "#3e8fc9", size: [9.5, 5.6, 1.65] },
+  { id: "modern-sedan", name: "Modern Sedan", ratings: { topSpeed: 63, acceleration: 61, turning: 60, braking: 68 }, color: "#d8dde0", size: [11.3, 5.9, 1.55] },
+  { id: "sport-compact", name: "Sport Compact", ratings: { topSpeed: 67, acceleration: 70, turning: 76, braking: 70 }, color: "#ef6b38", size: [9.7, 5.8, 1.45] },
+  { id: "touring-sedan", name: "Touring Sedan", ratings: { topSpeed: 70, acceleration: 68, turning: 68, braking: 76 }, color: "#4267a8", size: [11.7, 6, 1.55] },
+  { id: "hot-hatch", name: "Hot Hatch", ratings: { topSpeed: 73, acceleration: 78, turning: 82, braking: 74 }, color: "#d83c3c", size: [9.4, 5.8, 1.5] },
+  { id: "coupe", name: "Coupe", ratings: { topSpeed: 78, acceleration: 80, turning: 77, braking: 77 }, color: "#5d4cc2", size: [10.5, 6, 1.35] },
+  { id: "muscle-car", name: "Muscle Car", ratings: { topSpeed: 85, acceleration: 88, turning: 67, braking: 70 }, color: "#26282b", size: [11.2, 6.5, 1.45] },
+  { id: "sport-sedan", name: "Sport Sedan", ratings: { topSpeed: 84, acceleration: 83, turning: 82, braking: 84 }, color: "#2c8b80", size: [11.2, 6.1, 1.45] },
+  { id: "performance-coupe", name: "Performance Coupe", ratings: { topSpeed: 90, acceleration: 88, turning: 86, braking: 85 }, color: "#f0a62e", size: [10.6, 6.2, 1.3] },
+  { id: "grand-tourer", name: "Grand Tourer", ratings: { topSpeed: 93, acceleration: 87, turning: 82, braking: 88 }, color: "#6d7882", size: [11.5, 6.3, 1.35] },
+  { id: "exotic-coupe", name: "Exotic Coupe", ratings: { topSpeed: 96, acceleration: 94, turning: 91, braking: 91 }, color: "#e14932", size: [10.2, 6.4, 1.15] },
+  { id: "supercar", name: "Supercar", ratings: { topSpeed: 98, acceleration: 97, turning: 95, braking: 95 }, color: "#17a5a1", size: [10.1, 6.5, 1.1] },
+  { id: "elite-sports-car", name: "Elite Sports Car", ratings: { topSpeed: 100, acceleration: 100, turning: 100, braking: 100 }, color: "#f2f4f5", size: [10, 6.6, 1.05] },
 ];
 
 export const VEHICLE_CATALOG: readonly VehicleDefinition[] = profiles.map((profile) => {
@@ -55,7 +55,7 @@ export const VEHICLE_CATALOG: readonly VehicleDefinition[] = profiles.map((profi
   return {
     id: profile.id,
     name: profile.name,
-    price: profile.price,
+    price: GAME_CONFIG.progression.vehiclePrices[profile.id],
     stats: ratingsToStats(profile.ratings),
     appearance: {
       bodyColor: profile.color,

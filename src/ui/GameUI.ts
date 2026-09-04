@@ -4,6 +4,7 @@ import type { PlayerCar } from "../player/PlayerCar";
 import type { FuelManager } from "../player/FuelManager";
 import type { DamageManager } from "../player/DamageManager";
 import type { PoliceManager } from "../police/PoliceManager";
+import { PackageDeliveryState, type PackageDeliveryManager } from "../delivery/PackageDeliveryManager";
 import { GAME_CONFIG } from "../game/config";
 import { RideState, type PoliceCitation, type RideHistoryEntry, type RideOffer } from "../game/types";
 import type { Town } from "../world/Town";
@@ -23,6 +24,7 @@ import {
 export interface GameUIActions {
   start(): void;
   acceptRide(categoryId: MissionLicenseId, id: string): boolean;
+  acceptPackageDelivery(id: string): boolean;
   purchaseMissionLicense(id: MissionLicenseId): string;
   purchaseVehicle(id: string): string;
   equipVehicle(id: string): string;
@@ -35,12 +37,15 @@ export interface GameUIActions {
   debugSetUpgrade(stat: VehicleStatKey, level: number): void;
   debugEquipVehicle(id: string): void;
   debugTogglePoliceVision(): boolean;
-  debugResetProgression(): void;
+  resetProgression(): void;
 }
 
 export class GameUI {
   private readonly startScreen: HTMLDivElement;
   private readonly pauseScreen: HTMLDivElement;
+  private readonly pauseBalance: HTMLDivElement;
+  private readonly packageUnlockButton: HTMLButtonElement;
+  private readonly pauseFeedback: HTMLDivElement;
   private readonly hud: HTMLDivElement;
   private readonly indicator: HTMLDivElement;
   private readonly phone: HTMLDivElement;
@@ -83,6 +88,7 @@ export class GameUI {
   private phoneTab: MissionLicenseId | "garage" | "upgrades" | "scorecard" = "rideshare";
   private phoneFeedback = "";
   private phoneFeedbackSeconds = 0;
+  private pausedProfile: PlayerProfile | null = null;
 
   constructor(
     private readonly root: HTMLDivElement,
@@ -109,8 +115,29 @@ export class GameUI {
       <div class="panel">
         <h1>PAUSED</h1>
         <p>Press Escape to resume.</p>
+        <div class="pause-balance" data-pause-balance></div>
+        <div class="pause-license">
+          <div class="pause-license-title">PACKAGE DELIVERY</div>
+          <div class="pause-license-description">Unlock time-sensitive package jobs.</div>
+          <button type="button" data-unlock-packages></button>
+        </div>
+        <div class="pause-feedback" data-pause-feedback></div>
+        <button type="button" class="pause-reset" data-reset-progression>RESET PROGRESSION</button>
       </div>
     `;
+    this.pauseBalance = this.pauseScreen.querySelector("[data-pause-balance]")!;
+    this.packageUnlockButton = this.pauseScreen.querySelector("[data-unlock-packages]")!;
+    this.pauseFeedback = this.pauseScreen.querySelector("[data-pause-feedback]")!;
+    this.packageUnlockButton.addEventListener("click", () => {
+      if (!this.pausedProfile) return;
+      this.pauseFeedback.textContent = actions.purchaseMissionLicense("package_delivery");
+      this.renderPauseProgression(this.pausedProfile);
+    });
+    this.pauseScreen.querySelector("[data-reset-progression]")!.addEventListener("click", () => {
+      if (window.confirm("Reset all progression? This will erase your money, purchases, upgrades, and ride history.")) {
+        actions.resetProgression();
+      }
+    });
 
     this.hud = document.createElement("div");
     this.hud.className = "hud hidden";
@@ -168,6 +195,11 @@ export class GameUI {
       if (rideButton) {
         const categoryId = rideButton.dataset.rideCategory as MissionLicenseId;
         if (this.actions.acceptRide(categoryId, rideButton.dataset.rideId ?? "")) this.closePhone();
+        return;
+      }
+      const packageButton = target.closest<HTMLButtonElement>("[data-package-delivery-id]");
+      if (packageButton) {
+        if (this.actions.acceptPackageDelivery(packageButton.dataset.packageDeliveryId ?? "")) this.closePhone();
         return;
       }
       const licenseButton = target.closest<HTMLButtonElement>("[data-purchase-license]");
@@ -289,7 +321,7 @@ export class GameUI {
     this.citationOverlay.classList.add("hidden");
   }
 
-  showPaused(): void {
+  showPaused(profile: PlayerProfile): void {
     this.startScreen.classList.add("hidden");
     this.pauseScreen.classList.remove("hidden");
     this.phone.classList.add("hidden");
@@ -300,6 +332,9 @@ export class GameUI {
     this.mapOpen = false;
     this.refuelHeld = false;
     this.repairHeld = false;
+    this.pausedProfile = profile;
+    this.pauseFeedback.textContent = "";
+    this.renderPauseProgression(profile);
   }
 
   showCitation(citation: PoliceCitation): void {
@@ -313,12 +348,17 @@ export class GameUI {
     this.refuelHeld = false;
     this.repairHeld = false;
     const payment = citation.amountPaid > 0 ? `${this.money(citation.amountPaid)} PAID` : "NO FUNDS COLLECTED";
+    const packagePenalty = citation.packageConfiscated
+      ? `<div class="citation-offense">PACKAGE CONFISCATED</div>
+        <div class="citation-payment">POSSESSION FINE ${this.money(citation.possessionFine ?? 0)} · ${this.money(citation.possessionAmountPaid ?? 0)} PAID</div>`
+      : "";
     this.citationOverlay.innerHTML = `
       <div class="citation-panel">
         <div class="citation-agency">CITY POLICE</div>
         <div class="citation-title">CITATION</div>
         <div class="citation-offense">${citation.offense}</div>
         <div class="citation-payment">${payment}</div>
+        ${packagePenalty}
         <div class="citation-balance">BALANCE ${this.money(citation.remainingBalance)}</div>
         <button type="button" data-citation-continue>CONTINUE</button>
       </div>
@@ -356,6 +396,7 @@ export class GameUI {
   update(
     offers: RideOfferBoard,
     ride: RideManager,
+    packageDelivery: PackageDeliveryManager,
     player: PlayerCar,
     fuel: FuelManager,
     damage: DamageManager,
@@ -394,7 +435,7 @@ export class GameUI {
     this.refuelStatus.classList.toggle("hidden", !fuel.isRefueling);
     this.updateRefuelOverlay(fuel, fuelPercent, walletMoney);
     this.updateRepairOverlay(damage, damagePercent, walletMoney);
-    const rideHudHtml = this.activeRideHudLine(ride, player);
+    const rideHudHtml = this.activeActivityHudLine(ride, packageDelivery, player);
     if (rideHudHtml !== this.lastRideHudHtml) {
       this.lastRideHudHtml = rideHudHtml;
       this.rideHud.innerHTML = rideHudHtml;
@@ -407,17 +448,17 @@ export class GameUI {
       this.phoneRefreshElapsed += deltaTime;
       if (this.lastPhoneHtml === "" || this.phoneRefreshElapsed >= GAME_CONFIG.ride.offerDistanceRefreshSeconds) {
         this.phoneRefreshElapsed = 0;
-        this.renderPhone(offers, ride, player, profile);
+        this.renderPhone(offers, ride, packageDelivery, player, profile);
       }
     }
     if (this.mapOpen) {
       this.mapRefreshElapsed += deltaTime;
       if (this.mapRefreshElapsed >= GAME_CONFIG.map.refreshSeconds) {
         this.mapRefreshElapsed = 0;
-        this.renderMap(ride, player, town);
+        this.renderMap(ride, packageDelivery, player, town);
       }
     }
-    this.renderRideResult(ride);
+    this.renderActivityResult(ride, packageDelivery);
   }
 
   dispose(): void {
@@ -454,11 +495,32 @@ export class GameUI {
     this.repairOverlay.style.setProperty("--damage-percent", `${damagePercent}%`);
   }
 
-  private renderPhone(offers: RideOfferBoard, ride: RideManager, player: PlayerCar, profile: PlayerProfile): void {
+  private renderPauseProgression(profile: PlayerProfile): void {
+    const category = getMissionLicense("package_delivery")!;
+    const owned = profile.ownsMissionLicense(category.id);
+    const affordable = profile.money >= category.unlockCost;
+    this.pauseBalance.textContent = `BALANCE ${this.money(profile.money)}`;
+    this.packageUnlockButton.disabled = owned || !affordable;
+    this.packageUnlockButton.textContent = owned
+      ? "PACKAGE DELIVERY UNLOCKED"
+      : affordable
+        ? `UNLOCK FOR ${this.wholeMoney(category.unlockCost)}`
+        : `NEED ${this.wholeMoney(category.unlockCost)}`;
+  }
+
+  private renderPhone(
+    offers: RideOfferBoard,
+    ride: RideManager,
+    packageDelivery: PackageDeliveryManager,
+    player: PlayerCar,
+    profile: PlayerProfile,
+  ): void {
     let content: string;
     const missionCategory = getMissionLicense(this.phoneTab);
     if (missionCategory) {
-      content = this.renderMissionTab(offers, ride, player, profile, missionCategory);
+      content = missionCategory.activityType === "packageDelivery"
+        ? this.renderPackageDeliveryTab(packageDelivery, ride, player, profile, missionCategory)
+        : this.renderMissionTab(offers, ride, packageDelivery, player, profile, missionCategory);
     } else if (this.phoneTab === "garage") {
       content = this.renderGarage(profile, player);
     } else if (this.phoneTab === "upgrades") {
@@ -490,6 +552,7 @@ export class GameUI {
   private renderMissionTab(
     offerBoard: RideOfferBoard,
     ride: RideManager,
+    packageDelivery: PackageDeliveryManager,
     player: PlayerCar,
     profile: PlayerProfile,
     category: MissionLicenseDefinition,
@@ -498,7 +561,7 @@ export class GameUI {
     if (ride.state !== RideState.Idle && ride.activeRide?.missionCategoryId === category.id) {
       return this.renderCurrentRide(ride, player, category);
     }
-    const rideInProgress = ride.state !== RideState.Idle;
+    const rideInProgress = ride.state !== RideState.Idle || packageDelivery.isActive;
     return `
       <div class="phone-title">${category.name.toUpperCase()} JOBS</div>
       ${rideInProgress ? '<div class="mission-status">CURRENT RIDE IN PROGRESS · NEW JOBS UNAVAILABLE</div>' : ""}
@@ -508,10 +571,66 @@ export class GameUI {
     `;
   }
 
+  private renderPackageDeliveryTab(
+    packageDelivery: PackageDeliveryManager,
+    ride: RideManager,
+    player: PlayerCar,
+    profile: PlayerProfile,
+    category: MissionLicenseDefinition,
+  ): string {
+    if (!profile.ownsMissionLicense(category.id)) return this.renderLockedMission(category, profile);
+    if (packageDelivery.activeOffer) {
+      const target = packageDelivery.getObjectivePosition();
+      const distance = target
+        ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
+        : 0;
+      const status = packageDelivery.state === PackageDeliveryState.DrivingToPickup
+        ? "Driving to package pickup"
+        : "Package onboard";
+      return `
+        <div class="phone-title">CURRENT PACKAGE DELIVERY</div>
+        <div class="current-ride-card">
+          <div class="ride-name">PRIORITY COURIER JOB</div>
+          <div>${status}</div>
+          <div>${distance} m away</div>
+          <div>Current Rate: ${this.money(packageDelivery.currentRatePerMeter)} / m</div>
+          <div>Current Payout: ${this.money(packageDelivery.currentPayout)}</div>
+          <div>Payout Remaining: ${Math.round(packageDelivery.payoutMultiplier * 100)}%</div>
+        </div>
+      `;
+    }
+    const offer = packageDelivery.offer;
+    const unavailable = ride.isActive;
+    return `
+      <div class="phone-title">PACKAGE DELIVERY</div>
+      ${unavailable ? '<div class="mission-status">CURRENT RIDE IN PROGRESS · NEW JOBS UNAVAILABLE</div>' : ""}
+      <div class="offer-list">
+        <div class="offer-card">
+          <div>
+            <div class="ride-name">PRIORITY COURIER JOB</div>
+            <div class="ride-tier">TIME SENSITIVE</div>
+          </div>
+          <div class="ride-details">
+            <div>Pickup: ${Math.round(offer.pickupDistance)} m away</div>
+            <div>Delivery: ${Math.round(offer.tripDistance)} m</div>
+            <div>Starting Rate: ${this.money(GAME_CONFIG.packageDelivery.ratePerMeter)} / m</div>
+            <div>Starting Payout: ${this.money(offer.initialPayout)}</div>
+            <div>Rate declines ${GAME_CONFIG.packageDelivery.fareDecayPercentPerSecond * 100}% / sec after acceptance</div>
+          </div>
+          <button type="button" data-package-delivery-id="${offer.id}" ${unavailable ? "disabled" : ""}>
+            ${unavailable ? "MISSION IN PROGRESS" : "ACCEPT"}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   private renderCurrentRide(ride: RideManager, player: PlayerCar, category: MissionLicenseDefinition): string {
     if (ride.activeRide) {
       const target = ride.getObjectivePosition();
-      const distance = target ? Math.round(distanceXZ(player.root.position, target)) : 0;
+      const distance = target
+        ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
+        : 0;
       const status = ride.state === RideState.DrivingToPickup ? "Driving to pickup" : "Passenger onboard";
       const onboardDetails = ride.state === RideState.PassengerOnboard
         ? `<div class="phone-current-score">${this.stars(ride.getStars())} · Tip now ${this.money(ride.getCurrentTip())}${this.violationPenaltyText(ride)}</div>`
@@ -533,15 +652,20 @@ export class GameUI {
 
   private renderLockedMission(category: MissionLicenseDefinition, profile: PlayerProfile): string {
     const affordable = profile.money >= category.unlockCost;
+    const unlockAction = category.unlockLocation === "pause"
+      ? `<div class="mission-status">UNLOCK FOR ${this.wholeMoney(category.unlockCost)} FROM THE PAUSE MENU</div>`
+      : `<button type="button" data-purchase-license="${category.id}" ${affordable ? "" : "disabled"}>
+          ${affordable ? `PURCHASE FOR ${this.wholeMoney(category.unlockCost)}` : `NEED ${this.wholeMoney(category.unlockCost)}`}
+        </button>`;
     return `
       <div class="license-lock">
         <div class="license-lock-label">MISSION LICENSE</div>
         <div class="license-lock-title">${category.name.toUpperCase()}</div>
         <div class="license-lock-description">${category.description}</div>
-        <div class="license-lock-rate">BASE FARES ×${category.fareMultiplier}</div>
-        <button type="button" data-purchase-license="${category.id}" ${affordable ? "" : "disabled"}>
-          ${affordable ? `PURCHASE FOR ${this.wholeMoney(category.unlockCost)}` : `NEED ${this.wholeMoney(category.unlockCost)}`}
-        </button>
+        <div class="license-lock-rate">${category.activityType === "packageDelivery"
+          ? `${this.money(GAME_CONFIG.packageDelivery.ratePerMeter)} / M STARTING RATE`
+          : `BASE FARES ×${category.fareMultiplier}`}</div>
+        ${unlockAction}
       </div>
     `;
   }
@@ -730,7 +854,12 @@ export class GameUI {
     this.lastPhoneHtml = "";
   }
 
-  private renderMap(ride: RideManager, player: PlayerCar, town: Town): void {
+  private renderMap(
+    ride: RideManager,
+    packageDelivery: PackageDeliveryManager,
+    player: PlayerCar,
+    town: Town,
+  ): void {
     const playerPoint = this.mapPoint(player.root.position.x, player.root.position.z, town);
     const playerRotation = Math.PI - player.heading;
     const gasMarkers = town.gasStations.map((station) => {
@@ -742,11 +871,22 @@ export class GameUI {
       return `<div class="map-marker repair" style="left:${point.x}%;top:${point.y}%">A</div>`;
     }).join("");
     const activeRide = ride.activeRide;
-    const pickupMarker = activeRide && ride.state === RideState.DrivingToPickup
-      ? this.objectiveMapMarker(activeRide.pickupPoint.position.x, activeRide.pickupPoint.position.z, town, "pickup", "P")
+    const activePackage = packageDelivery.activeOffer;
+    const pickup = activeRide && ride.state === RideState.DrivingToPickup
+      ? activeRide.pickupPoint
+      : activePackage && packageDelivery.state === PackageDeliveryState.DrivingToPickup
+        ? activePackage.pickupPoint
+        : null;
+    const destination = activeRide && ride.state === RideState.PassengerOnboard
+      ? activeRide.destinationPoint
+      : activePackage && packageDelivery.state === PackageDeliveryState.CarryingPackage
+        ? activePackage.destinationPoint
+        : null;
+    const pickupMarker = pickup
+      ? this.objectiveMapMarker(pickup.position.x, pickup.position.z, town, "pickup", "P")
       : "";
-    const destinationMarker = activeRide && ride.state === RideState.PassengerOnboard
-      ? this.objectiveMapMarker(activeRide.destinationPoint.position.x, activeRide.destinationPoint.position.z, town, "dropoff", "D")
+    const destinationMarker = destination
+      ? this.objectiveMapMarker(destination.position.x, destination.position.z, town, "dropoff", "D")
       : "";
 
     this.setHtml(this.map, "lastMapHtml", `
@@ -811,12 +951,33 @@ export class GameUI {
     `;
   }
 
-  private activeRideHudLine(ride: RideManager, player: PlayerCar): string {
+  private activeActivityHudLine(
+    ride: RideManager,
+    packageDelivery: PackageDeliveryManager,
+    player: PlayerCar,
+  ): string {
+    if (packageDelivery.activeOffer) {
+      const target = packageDelivery.getObjectivePosition();
+      const distance = target
+        ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
+        : 0;
+      const objective = packageDelivery.state === PackageDeliveryState.DrivingToPickup
+        ? "COLLECT PACKAGE"
+        : "DELIVER PACKAGE";
+      return `
+        <div class="objective">PACKAGE DELIVERY · ${objective}</div>
+        <div>PAYOUT: ${this.money(packageDelivery.currentPayout)}</div>
+        <div>RATE: ${this.money(packageDelivery.currentRatePerMeter)} / M</div>
+        <div>${distance} m</div>
+      `;
+    }
     if (!ride.activeRide) {
       return `<div class="objective">PRESS P FOR RIDES</div>`;
     }
     const target = ride.getObjectivePosition();
-    const distance = target ? Math.round(distanceXZ(player.root.position, target)) : 0;
+    const distance = target
+      ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
+      : 0;
     if (ride.state === RideState.DrivingToPickup) {
       const category = getMissionLicense(ride.activeRide.missionCategoryId);
       return `
@@ -845,12 +1006,23 @@ export class GameUI {
     const dz = target.z - player.root.position.z;
     const worldAngle = Math.atan2(dx, dz);
     const relativeAngle = normalizeAngle(worldAngle - player.heading);
-    const distance = Math.round(distanceXZ(player.root.position, target));
+    const distance = Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit);
     this.indicatorArrow.style.transform = `rotate(${relativeAngle}rad)`;
     this.indicatorDistance.textContent = `${distance}m`;
   }
 
-  private renderRideResult(ride: RideManager): void {
+  private renderActivityResult(ride: RideManager, packageDelivery: PackageDeliveryManager): void {
+    if (packageDelivery.lastResult && packageDelivery.resultTimeRemaining > 0) {
+      const result = packageDelivery.lastResult;
+      this.rideResult.classList.remove("hidden");
+      this.setHtml(this.rideResult, "lastRideResultHtml", `
+        <div class="ride-result-title">DELIVERY COMPLETE</div>
+        <div>${Math.round(result.tripDistance)} m delivered in ${this.duration(result.durationSeconds)}</div>
+        <div>Starting Payout ${this.money(result.initialPayout)}</div>
+        <div>Total ${this.money(result.payout)}</div>
+      `);
+      return;
+    }
     if (!ride.lastResult || ride.resultTimeRemaining <= 0) {
       this.rideResult.classList.add("hidden");
       this.lastRideResultHtml = "";
@@ -941,7 +1113,7 @@ export class GameUI {
         this.actions.debugEquipVehicle(id);
       }
       if (action === "reset" && window.confirm("Clear all saved progression and reload?")) {
-        this.actions.debugResetProgression();
+        this.actions.resetProgression();
       }
       this.lastPhoneHtml = "";
     });

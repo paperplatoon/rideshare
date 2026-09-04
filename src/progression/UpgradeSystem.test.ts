@@ -3,11 +3,13 @@ import { GAME_CONFIG } from "../game/config";
 import { applyPermanentUpgrades, getUpgradeCost, getUpgradeMultiplier } from "./UpgradeSystem";
 
 describe("UpgradeSystem", () => {
-  it("uses the triangular per-level price curve", () => {
-    expect(getUpgradeCost(1)).toBe(100);
-    expect(getUpgradeCost(2)).toBe(300);
-    expect(getUpgradeCost(10)).toBe(5_500);
-    expect(getUpgradeCost(50)).toBe(127_500);
+  it("uses the configured base and additional per-level price curve", () => {
+    const expectedCost = (level: number) => GAME_CONFIG.progression.upgradeCostBase * level
+      + GAME_CONFIG.progression.additionalCostPerUpgradeLevel * level * (level - 1) / 2;
+    expect(getUpgradeCost(1)).toBe(expectedCost(1));
+    expect(getUpgradeCost(2)).toBe(expectedCost(2));
+    expect(getUpgradeCost(10)).toBe(expectedCost(10));
+    expect(getUpgradeCost(50)).toBe(expectedCost(50));
     expect(getUpgradeCost(0)).toBe(0);
     expect(getUpgradeCost(51)).toBe(0);
   });
