@@ -32,6 +32,8 @@ export interface VehicleDefinition {
 
 export interface PlayerProgression {
   version: number;
+  jailFreeCards: number;
+  vehicleCoupons: number;
   money: number;
   completedRides: number;
   ownedVehicleIds: string[];

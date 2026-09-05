@@ -400,16 +400,14 @@ export class PoliceManager {
   ): PoliceCitation {
     const assessedFine = calculatePoliceFine(state.peakSeverity);
     this.clearPursuit();
-    const amountPaid = profile.spend(assessedFine);
-    const resistingArrestAmountPaid = profile.spend(resistingArrestFine);
-    profile.saveNow();
+    // Game collects all charges before the profile settles payment and protection.
     const citation: PoliceCitation = {
       officerId: officer.id,
       offense,
       assessedFine,
-      amountPaid,
+      amountPaid: 0,
       resistingArrestFine,
-      resistingArrestAmountPaid,
+      resistingArrestAmountPaid: 0,
       remainingBalance: profile.money,
     };
     this.citationCooldown = GAME_CONFIG.police.citationCooldownSeconds;

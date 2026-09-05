@@ -1,3 +1,4 @@
+import { passengerArchetype } from "../ride/PassengerArchetypes";
 import type { RideOfferBoard } from "../ride/RideOfferBoard";
 import type { RideManager } from "../ride/RideManager";
 import type { PlayerCar } from "../player/PlayerCar";
@@ -6,7 +7,7 @@ import type { DamageManager } from "../player/DamageManager";
 import type { PoliceManager } from "../police/PoliceManager";
 import { PackageDeliveryState, type PackageDeliveryManager } from "../delivery/PackageDeliveryManager";
 import { GAME_CONFIG } from "../game/config";
-import { PassengerType, RideState, type PoliceCitation, type RideHistoryEntry, type RideOffer } from "../game/types";
+import { PassengerType, RideState, type PoliceCitation, type RideHistoryEntry, type RideResult, type RideOffer } from "../game/types";
 import type { Town } from "../world/Town";
 import { distanceXZ, normalizeAngle } from "../utils/math";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -375,7 +376,7 @@ export class GameUI {
     this.mapOpen = false;
     this.refuelHeld = false;
     this.repairHeld = false;
-    const basePayment = citation.amountPaid > 0 ? `${this.money(citation.amountPaid)} PAID` : "NO FUNDS COLLECTED";
+    const basePayment = citation.waiverReason ? "WAIVED" : citation.amountPaid > 0 ? `${this.money(citation.amountPaid)} PAID` : "NO FUNDS COLLECTED";
     const resistingPenalty = citation.resistingArrestFine > 0
       ? `<div class="citation-offense">RESISTING ARREST</div>
         <div class="citation-payment">FINE ${this.money(citation.resistingArrestFine)} · ${this.money(citation.resistingArrestAmountPaid)} PAID</div>`
@@ -399,6 +400,7 @@ export class GameUI {
         ${resistingPenalty}
         ${packagePenalty}
         <div class="citation-payment">TOTAL ${this.money(totalAssessed)} · ${this.money(totalPaid)} PAID</div>
+        ${citation.waiverReason ? `<div class="trait-status">${citation.waiverReason === "lawyer" ? "LAWYER" : "GET OUT OF JAIL FREE CARD USED"} · ${this.money(citation.waivedAmount ?? 0)} WAIVED</div>` : ""}
         <div class="citation-balance">BALANCE ${this.money(citation.remainingBalance)}</div>
         <button type="button" data-citation-continue>CONTINUE</button>
       </div>
@@ -484,7 +486,10 @@ export class GameUI {
     this.policeMeterLabel.textContent = policeLabels[police.warning.hudMode];
     this.policeFineLabel.classList.toggle("hidden", !police.isPursuitActive);
     if (police.isPursuitActive) {
-      this.policeFineLabel.textContent = `${this.money(police.warning.potentialFine)} FINE IF CAUGHT`;
+      this.policeFineLabel.textContent = ride.hasOnboardTrait(PassengerType.Lawyer)
+        ? "LAWYER · FINES WAIVED IF CAUGHT"
+        : profile.jailFreeCards > 0 ? "GET OUT OF JAIL FREE CARD WILL BE USED"
+        : `${this.money(police.warning.potentialFine)} FINE IF CAUGHT`;
     }
     this.policeMeterFill.style.width = `${policePercent}%`;
     this.policeEscapeFill.style.width = police.warning.hudMode === "escaping"
@@ -542,9 +547,9 @@ export class GameUI {
       return;
     }
     const repaired = damage.isRepaired;
-    const outOfMoney = walletMoney <= 0;
+    const outOfMoney = walletMoney <= 0 && !damage.freeRepair;
     this.repairButton.disabled = repaired || outOfMoney;
-    this.repairButton.textContent = repaired ? "CAR REPAIRED" : outOfMoney ? "NO MONEY" : "REPAIR CAR";
+    this.repairButton.textContent = repaired ? "CAR REPAIRED" : outOfMoney ? "NO MONEY" : damage.freeRepair ? "FREE REPAIR · WAIVE FARE + TIP" : "REPAIR CAR";
     this.repairButton.classList.toggle("held", this.repairHeld && !repaired && !outOfMoney);
     this.repairOverlay.style.setProperty("--damage-percent", `${damagePercent}%`);
   }
@@ -698,10 +703,12 @@ export class GameUI {
         <div class="current-ride-card">
           <div class="ride-name">${ride.activeRide.passengerName}</div>
           ${this.passengerTypeBadge(ride.activeRide.passengerType)}
+          ${this.traitExplanation(ride.activeRide.passengerType)}
           <div>${status}</div>
           <div>${distance} m away</div>
-          <div>Base Fare: ${this.money(ride.activeRide.baseFare)}</div>
+          <div>Base Fare: ${this.money(ride.effectiveBaseFare)}</div>
           ${onboardDetails}
+          ${this.currentTraitStatus(ride)}
         </div>
       `;
     }
@@ -739,6 +746,7 @@ export class GameUI {
         <div class="phone-title">VEHICLE GARAGE</div>
         ${this.phonePagination("garage", this.garagePage, pageCount)}
       </div>
+      ${this.rewardInventory(profile)}
       <div class="garage-list">
         ${vehicles.map((vehicle) => this.vehicleCard(vehicle, profile, stopped)).join("")}
       </div>
@@ -748,7 +756,8 @@ export class GameUI {
   private vehicleCard(vehicle: VehicleDefinition, profile: PlayerProfile, stopped: boolean): string {
     const owned = profile.ownsVehicle(vehicle.id);
     const equipped = profile.equippedVehicleId === vehicle.id;
-    const affordable = profile.money >= vehicle.price;
+    const quote = profile.getVehiclePurchaseQuote(vehicle.id)!;
+    const affordable = profile.money >= quote.price;
     const effective = applyPermanentUpgrades(vehicle.stats, profile.upgrades);
     let action: string;
     if (equipped) {
@@ -763,10 +772,11 @@ export class GameUI {
         <div class="garage-card-heading">
           <div>
             <div class="vehicle-name">${vehicle.name}</div>
-            <div class="vehicle-status">${equipped ? "EQUIPPED" : owned ? "OWNED" : this.wholeMoney(vehicle.price)}</div>
+            <div class="vehicle-status">${equipped ? "EQUIPPED" : owned ? "OWNED" : this.wholeMoney(quote.price)}</div>
           </div>
           <span class="vehicle-swatch" style="background:${vehicle.appearance.bodyColor}"></span>
         </div>
+        ${quote.discount > 0 ? `<div class="trait-status">${this.wholeMoney(quote.discount)} coupon discount · ${quote.couponsUsed} used on purchase</div>` : ""}
         <div class="vehicle-stats">
           ${VEHICLE_STAT_KEYS.map((stat) => this.vehicleStatRow(vehicle, stat, effective[stat], profile.upgrades[stat])).join("")}
         </div>
@@ -826,6 +836,7 @@ export class GameUI {
         <div class="phone-title">RIDE SCORECARD</div>
         ${history.length > 0 ? this.phonePagination("scorecard", this.scorecardPage, pageCount) : ""}
       </div>
+      ${this.rewardInventory(profile)}
       <div class="scorecard-summary">
         ${this.scorecardSummaryStat(profile.completedRides.toLocaleString("en-US"), "LIFETIME RIDES")}
         ${this.scorecardSummaryStat(history.length > 0 ? averageStars.toFixed(1) : "-", "AVERAGE STARS")}
@@ -862,6 +873,7 @@ export class GameUI {
           ${this.scorecardDetail("TIP PENALTY", `-${Math.round(ride.violationTipPenaltyPercent)}%`)}
           ${this.scorecardDetail("TIME TIP", `${Math.round(ride.timeTipPercentRemaining)}%`)}
         </div>
+        ${this.traitResultDetails(ride)}
         <div class="scorecard-money">
           <span>FARE ${this.money(ride.baseFare)}</span>
           <span>TIP ${this.money(ride.tip)}</span>
@@ -1048,6 +1060,7 @@ export class GameUI {
         <button type="button" data-ride-id="${offer.id}" data-ride-category="${offer.missionCategoryId}" ${disabled ? "disabled" : ""}>
           ${disabled ? "RIDE IN PROGRESS" : "ACCEPT"}
         </button>
+        ${this.traitExplanation(offer.passengerType)}
         <div class="ride-details">
           ${this.offerMetric("PICKUP", `${Math.round(offer.pickupDistance)} m`)}
           ${this.offerMetric("TRIP", `${Math.round(offer.tripDistance)} m`)}
@@ -1062,7 +1075,7 @@ export class GameUI {
   }
 
   private passengerTypeBadge(passengerType: PassengerType): string {
-    return passengerType === PassengerType.Normal ? "" : `<div class="ride-type">${passengerType}</div>`;
+    return passengerType === PassengerType.Normal ? "" : `<div class="ride-type">${passengerArchetype(passengerType).name}</div>`;
   }
 
   private activeActivityHudLine(
@@ -1090,6 +1103,7 @@ export class GameUI {
       const category = getMissionLicense(ride.activeRide.missionCategoryId);
       return `
         <div class="objective">${category?.name.toUpperCase() ?? "RIDE"} · PICK UP: ${this.passengerNameWithTrait(ride.activeRide.passengerName, ride.activeRide.passengerType)}</div>
+        ${this.traitExplanation(ride.activeRide.passengerType)}
         ${arrivalWarning}
       `;
     }
@@ -1098,17 +1112,42 @@ export class GameUI {
       : "";
     return `
       <div class="objective">${getMissionLicense(ride.activeRide.missionCategoryId)?.name.toUpperCase() ?? "RIDE"} · ${this.passengerNameWithTrait(ride.activeRide.passengerName, ride.activeRide.passengerType)}</div>
+      ${this.traitExplanation(ride.activeRide.passengerType)}
       <div class="ride-score-line">
         <span class="ride-stars">${this.stars(ride.getStars())}</span>
         <span class="ride-tip">${this.money(ride.getCurrentTip())}</span>
         ${tipPenalty}
       </div>
+      ${this.currentTraitStatus(ride)}
       ${arrivalWarning}
     `;
   }
 
+  private traitExplanation(type: PassengerType): string {
+    const text = passengerArchetype(type).text;
+    return text ? `<div class="trait-explanation">${text}</div>` : "";
+  }
+
+  private currentTraitStatus(ride: RideManager): string {
+    if (ride.fareWaived) return '<div class="trait-status">FREE REPAIR · FARE AND TIP WAIVED</div>';
+    return `${ride.bonusTip > 0 ? `<div class="trait-status">BONUS EARNED ${this.money(ride.bonusTip)}</div>` : ""}
+      ${ride.traitTipDeduction > 0 ? `<div class="trait-status">TRAIT TIP DEDUCTIONS ${this.money(ride.traitTipDeduction)}</div>` : ""}`;
+  }
+
+  private rewardInventory(profile: PlayerProfile): string {
+    return `<div class="reward-inventory">Get Out of Jail Free cards: ${profile.jailFreeCards}<br>Vehicle coupons: ${profile.vehicleCoupons} × ${this.wholeMoney(GAME_CONFIG.ride.archetypes.vehicleCouponValue)}</div>`;
+  }
+
+  private traitResultDetails(result: RideResult): string {
+    return `${result.fareWaived ? '<div class="trait-status">FARE AND TIP WAIVED FOR REPAIRS</div>' : ""}
+      ${(result.bonusTip ?? 0) > 0 ? `<div class="trait-status">Bonus included in tip: ${this.money(result.bonusTip!)}</div>` : ""}
+      ${(result.traitTipDeduction ?? 0) > 0 ? `<div class="trait-status">Trait tip deductions: ${this.money(result.traitTipDeduction!)}</div>` : ""}
+      ${(result.cardsEarned ?? 0) > 0 ? '<div class="trait-status">+1 GET OUT OF JAIL FREE CARD</div>' : ""}
+      ${(result.couponsEarned ?? 0) > 0 ? `<div class="trait-status">+1 ${this.wholeMoney(GAME_CONFIG.ride.archetypes.vehicleCouponValue)} VEHICLE COUPON</div>` : ""}`;
+  }
+
   private passengerNameWithTrait(name: string, passengerType: PassengerType): string {
-    return passengerType === PassengerType.Normal ? name : `${name} (${passengerType})`;
+    return passengerType === PassengerType.Normal ? name : `${name} (${passengerArchetype(passengerType).name})`;
   }
 
   private updateIndicator(target: Vector3 | null, player: PlayerCar): void {
@@ -1153,6 +1192,7 @@ export class GameUI {
       <div>Base Fare ${this.money(result.baseFare)}</div>
       <div>Tip ${this.money(result.tip)}</div>
       ${result.violationTipPenaltyPercent > 0 ? `<div>Illegal Driving ${result.violationPoints.toFixed(1)} pts · Tip -${Math.round(result.violationTipPenaltyPercent)}%</div>` : ""}
+      ${this.traitResultDetails(result)}
       <div>Total ${this.money(result.total)}</div>
     `);
   }

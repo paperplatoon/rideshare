@@ -29,6 +29,12 @@ export class RideManager {
   collisionFlashText = "";
   collisionFlashSeconds = 0;
   private passengerElapsed = 0;
+  bonusTip = 0;
+  traitTipDeduction = 0;
+  fareWaived = false;
+  private tipForfeited = false;
+  private stationRewardEarned = false;
+
   private tipTimeMultiplier = 1;
   private violationBaselinePoints = 0;
   private rideViolationPoints = 0;
@@ -110,7 +116,7 @@ export class RideManager {
     if (speedMph < GAME_CONFIG.ride.satisfaction.collisionSpeedThresholdMph) {
       return;
     }
-    const penalty = this.rulesFor(this.activeRide.passengerType).collisionPenalty;
+    const penalty = this.rulesFor(this.activeRide.passengerType).collisionPenalty * this.satisfactionPenaltyMultiplier;
     this.satisfaction = clamp(this.satisfaction - penalty, 0, 100);
     this.collisionCount += 1;
     this.collisionCooldown = GAME_CONFIG.ride.satisfaction.collisionCooldownSeconds;
@@ -135,12 +141,76 @@ export class RideManager {
     if (!this.activeRide) {
       return 0;
     }
-    return this.calculateTip(
-      this.activeRide.baseFare,
-      this.satisfaction,
-      this.tipTimeMultiplier,
-      this.getViolationTipMultiplier(),
+    if (this.fareWaived || this.tipForfeited) return 0;
+    const ordinaryTip = this.calculateTip(
+      this.activeRide.baseFare, this.satisfaction, this.tipTimeMultiplier, this.getViolationTipMultiplier(),
     );
+    return Math.max(0, ordinaryTip - this.traitTipDeduction) + this.bonusTip;
+  }
+
+  get effectiveBaseFare(): number {
+    return this.fareWaived ? 0 : this.activeRide?.baseFare ?? 0;
+  }
+
+  hasOnboardTrait(type: PassengerType): boolean {
+    return this.state === RideState.PassengerOnboard && this.activeRide?.passengerType === type;
+  }
+
+  registerDrivingEvent(event: "redLight" | "yellowIntersection" | "opposingLane"): void {
+    const rules = GAME_CONFIG.ride.archetypes;
+    if (event === "redLight" && this.hasOnboardTrait(PassengerType.Lawful)) {
+      this.traitTipDeduction += this.startingTip * rules.redLightDeduction;
+      this.flash("RED LIGHT · TIP REDUCED");
+    } else if (event === "opposingLane" && this.hasOnboardTrait(PassengerType.Careful)) {
+      this.traitTipDeduction += this.startingTip * rules.opposingLaneDeduction;
+      this.flash("OPPOSING LANE / U-TURN · TIP REDUCED");
+    } else if (event === "yellowIntersection" && this.hasOnboardTrait(PassengerType.ThrillSeeker)) {
+      this.bonusTip += rules.yellowBonus;
+      this.flash(`YELLOW LIGHT · +$${rules.yellowBonus}`);
+    }
+  }
+
+  registerPursuit(active: boolean): void {
+    if (active && this.hasOnboardTrait(PassengerType.Shady) && !this.tipForfeited) {
+      this.tipForfeited = true;
+      this.flash("POLICE PURSUIT · TIP LOST");
+    }
+  }
+
+  registerStationStop(stoppedAtStation: boolean): void {
+    if (stoppedAtStation && this.hasOnboardTrait(PassengerType.OffGrid) && !this.stationRewardEarned) {
+      this.stationRewardEarned = true;
+      this.bonusTip += GAME_CONFIG.ride.archetypes.stationBonus;
+      this.flash(`GAS STATION STOP · +$${GAME_CONFIG.ride.archetypes.stationBonus}`);
+    }
+  }
+
+  registerMechanicRepair(repairedAmount: number): void {
+    if (repairedAmount > 0 && this.hasOnboardTrait(PassengerType.Mechanic) && !this.fareWaived) {
+      this.fareWaived = true;
+      this.flash("FREE REPAIR · FARE AND TIP WAIVED");
+    }
+  }
+
+  private flash(text: string): void {
+    this.collisionFlashText = text;
+    this.collisionFlashSeconds = 2;
+  }
+
+  private get startingTip(): number {
+    return (this.activeRide?.baseFare ?? 0) * this.getMaxTipPercent() * this.baseTipMultiplier;
+  }
+
+  private get baseTipMultiplier(): number {
+    if (this.activeRide?.passengerType === PassengerType.Millionaire) return GAME_CONFIG.ride.archetypes.millionaireTipMultiplier;
+    if (this.activeRide?.passengerType === PassengerType.ServiceWorker) return GAME_CONFIG.ride.archetypes.serviceWorkerTipMultiplier;
+    return 1;
+  }
+
+  private get satisfactionPenaltyMultiplier(): number {
+    if (this.activeRide?.passengerType === PassengerType.Millionaire) return GAME_CONFIG.ride.archetypes.millionairePenaltyMultiplier;
+    if (this.activeRide?.passengerType === PassengerType.ServiceWorker) return GAME_CONFIG.ride.archetypes.serviceWorkerPenaltyMultiplier;
+    return 1;
   }
 
   get currentViolationPoints(): number {
@@ -174,7 +244,7 @@ export class RideManager {
     if (!this.isSpeedWarning(speedMph) || !this.activeRide) {
       return `${Math.round(speedMph)} MPH`;
     }
-    if (this.activeRide.passengerType === PassengerType.SpeedDemon) {
+    if ((this.activeRide.passengerType === PassengerType.SpeedDemon || this.activeRide.passengerType === PassengerType.Hurried)) {
       return `${Math.round(speedMph)} MPH - TOO SLOW`;
     }
     return `${Math.round(speedMph)} MPH - TOO FAST`;
@@ -212,6 +282,11 @@ export class RideManager {
     }
     this.state = RideState.PassengerOnboard;
     this.satisfaction = GAME_CONFIG.ride.satisfaction.startingScore;
+    this.bonusTip = 0;
+    this.traitTipDeduction = 0;
+    this.fareWaived = false;
+    this.tipForfeited = false;
+    this.stationRewardEarned = false;
     this.passengerElapsed = 0;
     this.tipTimeMultiplier = 1;
     this.violationBaselinePoints = totalViolationPoints;
@@ -232,15 +307,17 @@ export class RideManager {
     }
     const rules = this.rulesFor(this.activeRide.passengerType);
     let penalized = false;
+    let penaltySeconds = deltaTime;
     if (rules.maxSafeSpeedMph !== undefined && speedMph > rules.maxSafeSpeedMph) {
       penalized = true;
     }
     if (rules.minRequiredSpeedMph !== undefined) {
       const grace = rules.gracePeriodSeconds ?? 0;
       penalized = this.passengerElapsed > grace && speedMph < rules.minRequiredSpeedMph;
+      penaltySeconds = Math.min(deltaTime, Math.max(0, this.passengerElapsed - grace));
     }
     if (penalized) {
-      this.satisfaction = clamp(this.satisfaction - rules.speedPenaltyPerSecond * deltaTime, 0, 100);
+      this.satisfaction = clamp(this.satisfaction - rules.speedPenaltyPerSecond * this.satisfactionPenaltyMultiplier * penaltySeconds, 0, 100);
     }
   }
 
@@ -248,14 +325,9 @@ export class RideManager {
     if (!this.activeRide) {
       return;
     }
-    const baseFare = this.activeRide.baseFare;
+    const baseFare = this.effectiveBaseFare;
     const violationTipPenaltyPercent = this.violationTipPenaltyPercent;
-    const tip = this.calculateTip(
-      baseFare,
-      this.satisfaction,
-      this.tipTimeMultiplier,
-      this.getViolationTipMultiplier(),
-    );
+    const tip = this.getCurrentTip();
     const total = baseFare + tip;
     const result: RideResult = {
       passengerName: this.activeRide.passengerName,
@@ -269,6 +341,11 @@ export class RideManager {
       stars: this.getStars(),
       baseFare,
       tip,
+      bonusTip: this.bonusTip,
+      traitTipDeduction: this.traitTipDeduction,
+      fareWaived: this.fareWaived,
+      cardsEarned: this.hasOnboardTrait(PassengerType.OffDutyCop) && this.getStars() === 5 ? 1 : 0,
+      couponsEarned: this.hasOnboardTrait(PassengerType.CarSalesman) ? 1 : 0,
       timeTipPercentRemaining: this.tipTimeMultiplier * 100,
       violationPoints: this.rideViolationPoints,
       violationTipPenaltyPercent,
@@ -281,6 +358,11 @@ export class RideManager {
     this.activeRide = null;
     this.state = RideState.Idle;
     this.satisfaction = GAME_CONFIG.ride.satisfaction.startingScore;
+    this.bonusTip = 0;
+    this.traitTipDeduction = 0;
+    this.fareWaived = false;
+    this.tipForfeited = false;
+    this.stationRewardEarned = false;
     this.passengerElapsed = 0;
     this.tipTimeMultiplier = 1;
     this.violationBaselinePoints = 0;
@@ -293,6 +375,7 @@ export class RideManager {
   private calculateTip(baseFare: number, satisfaction: number, timeMultiplier: number, violationMultiplier: number): number {
     return baseFare
       * this.getMaxTipPercent()
+      * this.baseTipMultiplier
       * (satisfaction / 100)
       * timeMultiplier
       * violationMultiplier;
@@ -318,6 +401,18 @@ export class RideManager {
   }
 
   private rulesFor(type: PassengerType): PassengerRules {
+    const traits = GAME_CONFIG.ride.archetypes;
+    if (type === PassengerType.Timid) return {
+      collisionPenalty: GAME_CONFIG.ride.satisfaction.normal.collisionPenalty,
+      speedPenaltyPerSecond: traits.speedPenaltyPerSecond,
+      maxSafeSpeedMph: traits.timidMaxMph,
+    };
+    if (type === PassengerType.Hurried) return {
+      collisionPenalty: GAME_CONFIG.ride.satisfaction.normal.collisionPenalty,
+      speedPenaltyPerSecond: traits.speedPenaltyPerSecond,
+      minRequiredSpeedMph: traits.hurriedMinMph,
+      gracePeriodSeconds: traits.hurriedGraceSeconds,
+    };
     if (type === PassengerType.ScaredyCat) {
       return GAME_CONFIG.ride.satisfaction.scaredyCat;
     }

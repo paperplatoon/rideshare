@@ -1,3 +1,4 @@
+import { PassengerDrivingEvents } from "../player/PassengerDrivingEvents";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
@@ -6,7 +7,7 @@ import type { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Loading/loadingScreen";
 import { GAME_CONFIG } from "./config";
-import { GameState, type PoliceCitation } from "./types";
+import { GameState, PassengerType, RideState, type PoliceCitation } from "./types";
 import { TownGenerator, type Town } from "../world/Town";
 import { PlayerCar } from "../player/PlayerCar";
 import { ChaseCamera } from "../player/ChaseCamera";
@@ -49,6 +50,7 @@ export class Game {
   private activity: ActivityManager | null = null;
   private drivingBehavior: DrivingBehaviorManager | null = null;
   private worldQuery: WorldQuery | null = null;
+  private passengerDrivingEvents: PassengerDrivingEvents | null = null;
   private physicsAccumulator = 0;
   private readonly previousPlayerPosition = Vector3.Zero();
   private readonly currentPlayerPosition = Vector3.Zero();
@@ -166,9 +168,18 @@ export class Game {
       while (this.physicsAccumulator >= fixedStep) {
         this.previousPlayerPosition.copyFrom(this.currentPlayerPosition);
         this.previousPlayerHeading = this.currentPlayerHeading;
+        const resetGeneration = this.player.resetGeneration;
         this.player.update(fixedStep, this.input, this.worldQuery, this.fuel.hasFuel, this.damage.damagePercent);
+        if (this.player.resetGeneration !== resetGeneration) {
+          this.passengerDrivingEvents?.reset(this.player.root.position);
+        }
         this.drivingBehavior.update(fixedStep, this.player, this.worldQuery);
         const collision = this.traffic.update(fixedStep, this.player);
+        const events = this.passengerDrivingEvents?.update(
+          this.player.root.position, (direction) => this.traffic!.trafficSignals.aspectFor(direction),
+        ) ?? [];
+        for (const event of events) this.ride.registerDrivingEvent(event);
+        this.ride.registerPursuit(this.police.isPursuitActive);
         const policeTarget = this.policeTargetSnapshot();
         if (collision.policeCollisionOfficerId !== null) {
           this.police.registerPoliceCollision(
@@ -190,6 +201,7 @@ export class Game {
             collision.collisionViolationSeverity,
           );
         }
+        this.ride.registerPursuit(this.police.isPursuitActive || citation !== null);
         trafficCollisionMph = Math.max(trafficCollisionMph, collision.ridePenaltyMph);
         collisionDamagePercent += collision.damagePercent;
         this.currentPlayerPosition.copyFrom(this.player.root.position);
@@ -197,6 +209,7 @@ export class Game {
         this.physicsAccumulator -= fixedStep;
         if (citation) {
           this.packageDelivery.confiscateForPolice(citation);
+          this.profile.settlePoliceCitation(citation, this.ride.hasOnboardTrait(PassengerType.Lawyer));
           this.activity.update();
           this.beginCitation(citation);
           citationIssued = true;
@@ -232,11 +245,23 @@ export class Game {
       !this.activity.hasActiveActivity,
       this.profile.ownedMissionLicenseIds,
     );
+    this.fuel.update(deltaTime, this.player, this.town.gasStations, this.profile, this.ui.isRefuelHeld);
+    this.damage.update(
+      deltaTime, this.player, this.town.autoBodyShops, this.profile, this.ui.isRepairHeld,
+      this.ride.hasOnboardTrait(PassengerType.Mechanic),
+    );
+    this.ride.registerMechanicRepair(this.damage.lastRepairAmount);
+    this.ride.registerStationStop(this.fuel.canUsePump);
+    this.ride.registerPursuit(this.police.isPursuitActive);
+    const previousRideState = this.ride.state;
     this.ride.update(deltaTime, this.player, true, this.drivingBehavior.totals.total);
+    if (previousRideState !== this.ride.state) {
+      this.passengerDrivingEvents?.reset(this.player.root.position);
+      // A pursuit already active at pickup counts for Shady too.
+      if (this.ride.state === RideState.PassengerOnboard) this.ride.registerPursuit(this.police.isPursuitActive);
+    }
     this.packageDelivery.update(deltaTime);
     this.activity.update();
-    this.fuel.update(deltaTime, this.player, this.town.gasStations, this.profile, this.ui.isRefuelHeld);
-    this.damage.update(deltaTime, this.player, this.town.autoBodyShops, this.profile, this.ui.isRepairHeld);
     this.profile.updateAutosave(deltaTime);
     if (this.worldQuery) {
       this.applyInterpolatedPlayerPose(this.physicsAccumulator / GAME_CONFIG.simulation.fixedStepSeconds);
@@ -291,6 +316,7 @@ export class Game {
     );
     this.activity = new ActivityManager();
     this.drivingBehavior = new DrivingBehaviorManager();
+    this.passengerDrivingEvents = new PassengerDrivingEvents(this.town.roadPositionsX, this.town.roadPositionsZ);
     this.fuel = new FuelManager();
     this.traffic = new TrafficManager(this.scene, this.town.roadSpawnPoints, this.town.roadPositionsX, this.town.roadPositionsZ);
     const debugVision = new URLSearchParams(window.location.search).has("debug");
@@ -311,6 +337,7 @@ export class Game {
     this.profile = null;
     this.activity = null;
     this.drivingBehavior = null;
+    this.passengerDrivingEvents = null;
     this.fuel = null;
     this.damage = null;
     this.traffic = null;
@@ -362,7 +389,7 @@ export class Game {
     const vehicle = getVehicleDefinition(id);
     if (!vehicle) return "VEHICLE NOT FOUND";
     if (this.profile.ownsVehicle(id)) return "ALREADY OWNED";
-    if (this.profile.money < vehicle.price) return "INSUFFICIENT FUNDS";
+    if (this.profile.money < this.profile.getVehiclePurchaseQuote(id)!.price) return "INSUFFICIENT FUNDS";
     const stopped = this.player.getSpeedMph() <= GAME_CONFIG.progression.equipMaxSpeedMph;
     if (!this.profile.purchaseVehicle(id, stopped)) return "PURCHASE FAILED";
     if (stopped) {

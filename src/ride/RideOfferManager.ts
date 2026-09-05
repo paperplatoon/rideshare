@@ -1,6 +1,7 @@
+import { pickPassengerType } from "./PassengerArchetypes";
 import { GAME_CONFIG } from "../game/config";
 import { PassengerType, type DeliveryPoint, type RideOffer, type RideTier } from "../game/types";
-import { distanceXZ, pickWeighted, randomBetween, seededRandom } from "../utils/math";
+import { distanceXZ, randomBetween, seededRandom } from "../utils/math";
 import type { PlayerCar } from "../player/PlayerCar";
 import type { MissionLicenseDefinition } from "../missions/MissionLicenseCatalog";
 
@@ -161,10 +162,7 @@ export class RideOfferManager {
   }
 
   private pickPassengerType(): PassengerType {
-    const key = pickWeighted(this.rng, GAME_CONFIG.ride.passengerWeights);
-    if (key === "scaredyCat") return PassengerType.ScaredyCat;
-    if (key === "speedDemon") return PassengerType.SpeedDemon;
-    return PassengerType.Normal;
+    return pickPassengerType(this.rng);
   }
 
   private refreshPickupDistances(): void {

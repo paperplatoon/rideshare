@@ -101,6 +101,8 @@ export interface PoliceCitation {
   resistingArrestFine: number;
   resistingArrestAmountPaid: number;
   remainingBalance: number;
+  waiverReason?: "lawyer" | "card";
+  waivedAmount?: number;
   packageConfiscated?: boolean;
   possessionFine?: number;
   possessionAmountPaid?: number;
@@ -127,6 +129,21 @@ export interface RoadSurfaceInfo {
 
 export enum PassengerType {
   Normal = "NORMAL",
+  Timid = "TIMID",
+  Hurried = "HURRIED",
+  Lawful = "LAWFUL",
+  Careful = "CAREFUL",
+  Shady = "SHADY",
+  ThrillSeeker = "THRILL-SEEKER",
+  Mechanic = "MECHANIC",
+  Lawyer = "LAWYER",
+  OffDutyCop = "OFF-DUTY COP",
+  CarSalesman = "CAR SALESMAN",
+  Millionaire = "MILLIONAIRE",
+  ServiceWorker = "FELLOW SERVICE WORKER",
+  OffGrid = "OFF-GRID",
+  // Retained only for historical saves and compatibility.
+
   ScaredyCat = "SCAREDY-CAT",
   SpeedDemon = "SPEED DEMON",
 }
@@ -167,6 +184,11 @@ export interface RideResult {
   stars: number;
   baseFare: number;
   tip: number;
+  bonusTip?: number;
+  traitTipDeduction?: number;
+  fareWaived?: boolean;
+  cardsEarned?: number;
+  couponsEarned?: number;
   timeTipPercentRemaining: number;
   violationPoints: number;
   violationTipPenaltyPercent: number;

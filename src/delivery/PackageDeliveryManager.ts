@@ -117,11 +117,10 @@ export class PackageDeliveryManager {
     if (!this.activeOffer) return false;
     this.finishActivity();
     const possessionFine = GAME_CONFIG.packageDelivery.possessionFine;
-    const possessionAmountPaid = this.profile.spend(possessionFine);
-    this.profile.saveNow();
+
     citation.packageConfiscated = true;
     citation.possessionFine = possessionFine;
-    citation.possessionAmountPaid = possessionAmountPaid;
+    citation.possessionAmountPaid = 0;
     citation.remainingBalance = this.profile.money;
     return true;
   }

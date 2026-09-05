@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GAME_CONFIG } from "../game/config";
-import { PassengerType, type RideResult } from "../game/types";
+import { PassengerType, type PoliceCitation, type RideResult } from "../game/types";
 import { ProgressionStore, type KeyValueStorage } from "../progression/ProgressionStore";
 import { getUpgradeCost } from "../progression/UpgradeSystem";
 import { PlayerProfile } from "./PlayerProfile";
@@ -250,6 +250,82 @@ describe("PlayerProfile", () => {
     expect(reset.upgrades).toEqual({ acceleration: 0, topSpeed: 0, turning: 0, braking: 0 });
     expect(reset.rideHistory).toEqual([]);
   });
+  it("persists stacked rewards, waives every fine once, and preserves cards when a Lawyer is onboard", () => {
+    const storage = new MemoryStorage();
+    const profile = createProfile(storage);
+    profile.completeRide({ ...rideResult(0, "Cop"), cardsEarned: 2, couponsEarned: 3, bonusTip: 20 });
+    const reloaded = createProfile(storage);
+    expect(reloaded.jailFreeCards).toBe(2);
+    expect(reloaded.vehicleCoupons).toBe(3);
+    expect(reloaded.rideHistory[0]).toMatchObject({ cardsEarned: 2, couponsEarned: 3, bonusTip: 20 });
+    const citation = (): PoliceCitation => ({
+      officerId: 1, offense: "SPEEDING", assessedFine: 150, resistingArrestFine: 100,
+      possessionFine: 200, amountPaid: 0, resistingArrestAmountPaid: 0, remainingBalance: 0,
+      packageConfiscated: true,
+    });
+    const money = reloaded.money;
+    const lawyer = citation();
+    reloaded.settlePoliceCitation(lawyer, true);
+    expect(lawyer).toMatchObject({ waiverReason: "lawyer", waivedAmount: 450, amountPaid: 0, possessionAmountPaid: 0 });
+    expect(reloaded.jailFreeCards).toBe(2);
+    const card = citation();
+    reloaded.settlePoliceCitation(card);
+    reloaded.settlePoliceCitation(card);
+    expect(card).toMatchObject({ waiverReason: "card", waivedAmount: 450, amountPaid: 0, resistingArrestAmountPaid: 0 });
+    expect(reloaded.jailFreeCards).toBe(1);
+    expect(reloaded.money).toBe(money);
+    expect(createProfile(storage).jailFreeCards).toBe(1);
+    reloaded.money = 0;
+    reloaded.settlePoliceCitation(citation());
+    expect(reloaded.jailFreeCards).toBe(0);
+  });
+
+  it("quotes and applies coupons atomically, retaining surplus and preserving coupons on failed purchases", () => {
+    const profile = createProfile();
+    const price = GAME_CONFIG.progression.vehiclePrices["used-compact"];
+    const required = Math.ceil(price / 100);
+    profile.completeRide({ ...rideResult(0, "Salesman"), couponsEarned: required + 2 });
+    profile.money = 0;
+    expect(profile.getVehiclePurchaseQuote("used-compact")).toEqual({ price: 0, discount: price, couponsUsed: required });
+    expect(profile.purchaseVehicle("unknown", false)).toBe(false);
+    expect(profile.vehicleCoupons).toBe(required + 2);
+    expect(profile.purchaseVehicle("used-compact", true)).toBe(true);
+    expect(profile.vehicleCoupons).toBe(2);
+    expect(profile.money).toBe(0);
+    expect(profile.purchaseVehicle("used-compact", false)).toBe(false);
+    expect(profile.purchaseVehicle("elite-sports-car", false)).toBe(false);
+    expect(profile.vehicleCoupons).toBe(2);
+  });
+
+  it.each([1, 2, 3])("loads version %s with zero rewards and preserves legacy passenger history", (version) => {
+    const storage = new MemoryStorage();
+    const profile = createProfile(storage);
+    profile.completeRide({ ...rideResult(12, "Legacy"), passengerType: PassengerType.ScaredyCat });
+    const save = JSON.parse(storage.getItem(GAME_CONFIG.progression.saveKey)!);
+    save.version = version;
+    delete save.jailFreeCards;
+    delete save.vehicleCoupons;
+    storage.setItem(GAME_CONFIG.progression.saveKey, JSON.stringify(save));
+    const restored = createProfile(storage);
+    expect(restored.completedRides).toBe(1);
+    expect(restored.jailFreeCards).toBe(0);
+    expect(restored.vehicleCoupons).toBe(0);
+    expect(restored.rideHistory[0].passengerType).toBe(PassengerType.ScaredyCat);
+  });
+
+  it("sanitizes invalid reward counts and resets inventories with progression", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(GAME_CONFIG.progression.saveKey, JSON.stringify({ version: 4, jailFreeCards: -2, vehicleCoupons: 2.9 }));
+    const profile = createProfile(storage);
+    expect(profile.jailFreeCards).toBe(0);
+    expect(profile.vehicleCoupons).toBe(2);
+    profile.completeRide({ ...rideResult(0, "Cop"), cardsEarned: 1 });
+    profile.clearSave();
+    const reset = createProfile(storage);
+    expect(reset.jailFreeCards).toBe(0);
+    expect(reset.vehicleCoupons).toBe(0);
+  });
+
 });
 
 function rideResult(total: number, passengerName: string): RideResult {

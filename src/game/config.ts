@@ -420,7 +420,7 @@ export const GAME_CONFIG = {
     // Change this key to start a separate save slot; normally leave it unchanged.
     saveKey: "delivery-driver-progression-v1",
     // Increase when the saved data format changes so migrations can distinguish old saves.
-    saveVersion: 3,
+    saveVersion: 4,
     // Increase for more starting cash; decrease for a harder start.
     startingMoney: 30,
     // Increase to save less often; decrease for more frequent crash protection.
@@ -587,13 +587,41 @@ export const GAME_CONFIG = {
       // Increase the tip reduction per violation point; decrease the illegal-driving penalty.
       violationTipPenaltyPerPoint: 0.02,
     },
-    passengerWeights: {
-      // Increase a passenger's weight to make that type appear more often; decrease it to make it rarer.
-      normal: 0.65,
-      // Increase to see more scaredy-cat passengers; decrease to see fewer.
-      scaredyCat: 0.25,
-      // Increase to see more speed-demon passengers; decrease to see fewer.
-      speedDemon: 0.1,
+    archetypes: {
+      // Increase a weight to make that exclusive trait more common; decrease to make it rarer.
+      weights: {
+        timid: 8, hurried: 8, lawful: 8, careful: 4, shady: 4, thrillSeeker: 2,
+        mechanic: 4, lawyer: 4, offDutyCop: 4, carSalesman: 4, millionaire: 4,
+        serviceWorker: 8, offGrid: 8, normal: 30,
+      },
+      // Increase to allow Timid passengers faster driving; decrease for a stricter limit.
+      timidMaxMph: 50,
+      // Increase to demand faster driving for Hurried passengers; decrease to relax it.
+      hurriedMinMph: 25,
+      // Increase to allow more time to accelerate after pickup; decrease for earlier penalties.
+      hurriedGraceSeconds: 5,
+      // Increase satisfaction loss for unmet trait speed requirements; decrease for gentler penalties.
+      speedPenaltyPerSecond: 2,
+      // Increase the fraction of starting tip lost per red light; decrease for a smaller deduction.
+      redLightDeduction: 0.1,
+      // Increase the fraction lost per opposing-lane maneuver; decrease for a smaller deduction.
+      opposingLaneDeduction: 0.2,
+      // Increase the reward per yellow intersection visit; decrease for a smaller bonus.
+      yellowBonus: 20,
+      // Increase the reward for the first gas station stop; decrease for a smaller bonus.
+      stationBonus: 20,
+      // Increase Millionaire starting tips; decrease to reduce generosity.
+      millionaireTipMultiplier: 3,
+      // Increase Millionaire satisfaction penalties; decrease for more forgiving ratings.
+      millionairePenaltyMultiplier: 3,
+      // Increase service worker starting tips; decrease to reduce generosity.
+      serviceWorkerTipMultiplier: 0.5,
+      // Increase service worker satisfaction penalties; decrease for more forgiving ratings.
+      serviceWorkerPenaltyMultiplier: 0.5,
+      // Increase the discount per saved coupon; decrease for smaller discounts.
+      vehicleCouponValue: 100,
+      // Increase the crossing dead band to suppress jitter; decrease for more sensitive detection.
+      centerLineTolerance: 0.5,
     },
     satisfaction: {
       // Increase starting score for happier passengers; decrease it for less initial goodwill.

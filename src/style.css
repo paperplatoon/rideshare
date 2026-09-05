@@ -1446,3 +1446,20 @@ button:disabled {
 .hidden {
   display: none;
 }
+
+.trait-explanation, .trait-status, .reward-inventory {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  font-size: 12px;
+}
+.trait-explanation { color: #f5d889; margin: 4px 0; }
+.trait-status { color: #a9eac9; margin: 4px 0; }
+.reward-inventory { margin: 8px 0; color: #b8c6d8; }
+.ride-hud > .trait-explanation, .ride-hud > .trait-status { white-space: normal; }
+.repair-button { white-space: normal; }
+.phone-screen .trait-explanation { color: #78510a; }
+.phone-screen .trait-status { color: #276442; }
+.phone-screen .reward-inventory { color: #536579; }
+
+.offer-card > .trait-explanation { grid-column: 1 / -1; margin: 0; }

@@ -16,6 +16,7 @@ import { createLowPolyVehicleMesh } from "../vehicles/VehicleMeshFactory";
 export class PlayerCar {
   readonly root: Mesh;
   heading = 0;
+  resetGeneration = 0;
   private velocityX = 0;
   private velocityZ = 0;
   private yawRate = 0;
@@ -57,6 +58,7 @@ export class PlayerCar {
   }
 
   reset(): void {
+    this.resetGeneration += 1;
     const nearest = this.findNearestRoadPoint();
     this.root.position.copyFrom(nearest.position);
     this.root.position.y = 0.9;

@@ -65,6 +65,7 @@ describe("PoliceManager", () => {
     for (let step = 0; step < 50 && !citation; step++) {
       citation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
     }
+    if (citation) profile.settlePoliceCitation(citation);
     expect(citation).toMatchObject({
       assessedFine: 95,
       amountPaid: 95,
@@ -181,6 +182,7 @@ describe("PoliceManager", () => {
       citation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
     }
 
+    if (citation) profile.settlePoliceCitation(citation);
     expect(citation).toMatchObject({
       officerId: 1,
       offense: "WRONG WAY",
@@ -236,6 +238,8 @@ describe("PoliceManager", () => {
       firstCitation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
     }
     expect(firstCitation).not.toBeNull();
+    expect(profile.money).toBe(500); // Assessment does not charge before all fines are collected.
+    profile.settlePoliceCitation(firstCitation!);
 
     let repeatedCitation = null;
     for (let step = 0; step < 50; step++) {
@@ -308,6 +312,7 @@ describe("PoliceManager", () => {
     for (let step = 0; step < 50 && !citation; step++) {
       citation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
     }
+    if (citation) profile.settlePoliceCitation(citation);
     expect(citation).toMatchObject({
       officerId: 10,
       offense: "COLLISION WITH POLICE",

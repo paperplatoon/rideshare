@@ -1,5 +1,5 @@
 import { GAME_CONFIG } from "../game/config";
-import { PassengerType, type RideHistoryEntry, type RideResult, type RideTier } from "../game/types";
+import { PassengerType, type PoliceCitation, type RideHistoryEntry, type RideResult, type RideTier } from "../game/types";
 import {
   MISSION_LICENSES,
   getMissionLicense,
@@ -12,6 +12,9 @@ import type { PlayerProgression, PlayerUpgradeLevels, VehicleStatKey } from "../
 
 export class PlayerProfile {
   private moneyValue: number;
+  private jailFreeCardsValue: number;
+  private vehicleCouponsValue: number;
+  private readonly settledCitations = new WeakSet<PoliceCitation>();
   private temporaryDebugMoneyValue = 0;
   private completedRidesValue: number;
   private ownedVehicleIdsValue: string[];
@@ -27,6 +30,8 @@ export class PlayerProfile {
   constructor(private readonly store = new ProgressionStore()) {
     const progression = sanitizeProgression(store.load());
     this.moneyValue = progression.money;
+    this.jailFreeCardsValue = progression.jailFreeCards;
+    this.vehicleCouponsValue = progression.vehicleCoupons;
     this.completedRidesValue = progression.completedRides;
     this.ownedVehicleIdsValue = progression.ownedVehicleIds;
     this.equippedVehicleIdValue = progression.equippedVehicleId;
@@ -66,7 +71,39 @@ export class PlayerProfile {
     return this.ownedMissionLicenseIdsValue;
   }
 
+  get jailFreeCards(): number { return this.jailFreeCardsValue; }
+  get vehicleCoupons(): number { return this.vehicleCouponsValue; }
+
+  getVehiclePurchaseQuote(id: string): { price: number; couponsUsed: number; discount: number } | null {
+    const vehicle = getVehicleDefinition(id);
+    if (!vehicle) return null;
+    const couponsUsed = this.ownsVehicle(id) ? 0 : Math.min(
+      this.vehicleCouponsValue, Math.ceil(vehicle.price / GAME_CONFIG.ride.archetypes.vehicleCouponValue),
+    );
+    const discount = Math.min(vehicle.price, couponsUsed * GAME_CONFIG.ride.archetypes.vehicleCouponValue);
+    return { price: vehicle.price - discount, couponsUsed, discount };
+  }
+
+  settlePoliceCitation(citation: PoliceCitation, lawyerOnboard = false): void {
+    if (this.settledCitations.has(citation)) return;
+    this.settledCitations.add(citation);
+    const waiverReason = lawyerOnboard ? "lawyer" : this.jailFreeCardsValue > 0 ? "card" : undefined;
+    if (waiverReason === "card") this.jailFreeCardsValue -= 1;
+    citation.waiverReason = waiverReason;
+    citation.waivedAmount = waiverReason
+      ? citation.assessedFine + citation.resistingArrestFine + (citation.possessionFine ?? 0) : 0;
+    citation.amountPaid = waiverReason ? 0 : this.spend(citation.assessedFine);
+    citation.resistingArrestAmountPaid = waiverReason ? 0 : this.spend(citation.resistingArrestFine);
+    if (citation.possessionFine !== undefined) {
+      citation.possessionAmountPaid = waiverReason ? 0 : this.spend(citation.possessionFine);
+    }
+    citation.remainingBalance = this.money;
+    this.saveNow();
+  }
+
   completeRide(result: RideResult): void {
+    this.jailFreeCardsValue += Math.floor(finiteNonnegative(result.cardsEarned, 0));
+    this.vehicleCouponsValue += Math.floor(finiteNonnegative(result.couponsEarned, 0));
     this.moneyValue += Math.max(0, result.total);
     this.completedRidesValue += 1;
     const completedAt = Date.now();
@@ -105,8 +142,10 @@ export class PlayerProfile {
 
   purchaseVehicle(id: string, equipImmediately: boolean): boolean {
     const vehicle = getVehicleDefinition(id);
-    if (!vehicle || this.ownsVehicle(id) || this.moneyValue < vehicle.price) return false;
-    this.deductMoney(vehicle.price);
+    const quote = this.getVehiclePurchaseQuote(id);
+    if (!vehicle || !quote || this.ownsVehicle(id) || this.moneyValue < quote.price) return false;
+    this.deductMoney(quote.price);
+    this.vehicleCouponsValue -= quote.couponsUsed;
     this.ownedVehicleIdsValue = [...this.ownedVehicleIdsValue, id];
     if (equipImmediately) this.equippedVehicleIdValue = id;
     this.saveNow();
@@ -191,6 +230,8 @@ export class PlayerProfile {
   private toProgression(): PlayerProgression {
     return {
       version: GAME_CONFIG.progression.saveVersion,
+      jailFreeCards: this.jailFreeCardsValue,
+      vehicleCoupons: this.vehicleCouponsValue,
       money: Math.max(0, this.moneyValue - this.temporaryDebugMoneyValue),
       completedRides: this.completedRidesValue,
       ownedVehicleIds: [...this.ownedVehicleIdsValue],
@@ -211,6 +252,8 @@ export class PlayerProfile {
 export function defaultProgression(): PlayerProgression {
   return {
     version: GAME_CONFIG.progression.saveVersion,
+    jailFreeCards: 0,
+    vehicleCoupons: 0,
     money: GAME_CONFIG.progression.startingMoney,
     completedRides: 0,
     ownedVehicleIds: ["starter"],
@@ -225,7 +268,7 @@ function sanitizeProgression(value: unknown): PlayerProgression {
   const defaults = defaultProgression();
   if (!value || typeof value !== "object") return defaults;
   const source = value as Partial<PlayerProgression>;
-  if (![1, 2, GAME_CONFIG.progression.saveVersion].includes(source.version ?? -1)) return defaults;
+  if (![1, 2, 3, GAME_CONFIG.progression.saveVersion].includes(source.version ?? -1)) return defaults;
   const knownIds = new Set(VEHICLE_CATALOG.map((vehicle) => vehicle.id));
   const owned = Array.isArray(source.ownedVehicleIds)
     ? [...new Set(source.ownedVehicleIds.filter((id): id is string => typeof id === "string" && knownIds.has(id)))]
@@ -244,6 +287,8 @@ function sanitizeProgression(value: unknown): PlayerProgression {
   if (!ownedMissionLicenseIds.includes("rideshare")) ownedMissionLicenseIds.unshift("rideshare");
   return {
     version: GAME_CONFIG.progression.saveVersion,
+    jailFreeCards: Math.floor(finiteNonnegative(source.jailFreeCards, 0)),
+    vehicleCoupons: Math.floor(finiteNonnegative(source.vehicleCoupons, 0)),
     money: finiteNonnegative(source.money, defaults.money),
     completedRides: Math.floor(finiteNonnegative(source.completedRides, 0)),
     ownedVehicleIds: owned,
@@ -292,6 +337,11 @@ function sanitizeRideHistory(value: unknown): RideHistoryEntry[] {
       stars: Math.floor(clampNumber(entry.stars, 0, 5)),
       baseFare: finiteNonnegative(entry.baseFare, 0),
       tip: finiteNonnegative(entry.tip, 0),
+      bonusTip: finiteNonnegative(entry.bonusTip, 0),
+      traitTipDeduction: finiteNonnegative(entry.traitTipDeduction, 0),
+      fareWaived: entry.fareWaived === true,
+      cardsEarned: Math.floor(finiteNonnegative(entry.cardsEarned, 0)),
+      couponsEarned: Math.floor(finiteNonnegative(entry.couponsEarned, 0)),
       timeTipPercentRemaining: clampNumber(entry.timeTipPercentRemaining, 0, 100),
       violationPoints: finiteNonnegative(entry.violationPoints, 0),
       violationTipPenaltyPercent: clampNumber(entry.violationTipPenaltyPercent, 0, 100),

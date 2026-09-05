@@ -9,19 +9,24 @@ export class DamageManager {
   isNearShop = false;
   canUseRepair = false;
   isRepairing = false;
+  freeRepair = false;
+  lastRepairAmount = 0;
 
-  update(deltaTime: number, player: PlayerCar, shops: AutoBodyShop[], profile: PlayerProfile, repairRequested = false): void {
+  update(deltaTime: number, player: PlayerCar, shops: AutoBodyShop[], profile: PlayerProfile, repairRequested = false, freeRepair = false): void {
+    this.freeRepair = freeRepair;
+    this.lastRepairAmount = 0;
     this.isNearShop = this.checkNearShop(player, shops);
     this.canUseRepair = this.isNearShop && player.getSpeedMph() <= GAME_CONFIG.repair.repairStopSpeedMph;
-    this.isRepairing = this.canUseRepair && repairRequested && !this.isRepaired && profile.money > 0;
+    this.isRepairing = this.canUseRepair && repairRequested && !this.isRepaired && (freeRepair || profile.money > 0);
     if (!this.isRepairing) {
       return;
     }
 
     const requestedRepair = Math.min(GAME_CONFIG.repair.repairRatePerSecond * deltaTime, this.damagePercent);
     const requestedCost = requestedRepair * GAME_CONFIG.repair.fullRepairCost;
-    const spent = profile.spend(requestedCost);
+    const spent = freeRepair ? requestedCost : profile.spend(requestedCost);
     const purchasedRepair = spent / GAME_CONFIG.repair.fullRepairCost;
+    this.lastRepairAmount = purchasedRepair;
     this.damagePercent = clamp(this.damagePercent - purchasedRepair, 0, 1);
     if (this.isRepaired) {
       this.isRepairing = false;

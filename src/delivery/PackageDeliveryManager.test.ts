@@ -59,7 +59,7 @@ describe("PackageDeliveryManager", () => {
       officerId: 1,
       offense: "SPEEDING",
       assessedFine: 40,
-      amountPaid: 40,
+      amountPaid: 0,
       resistingArrestFine: 0,
       resistingArrestAmountPaid: 0,
       remainingBalance: fixture.profile.money,
@@ -68,10 +68,12 @@ describe("PackageDeliveryManager", () => {
     expect(fixture.manager.confiscateForPolice(citation)).toBe(true);
     expect(fixture.manager.isActive).toBe(false);
     expect(fixture.manager.lastResult).toBeNull();
+    expect(fixture.profile.money).toBe(GAME_CONFIG.packageDelivery.possessionFine / 2);
+    fixture.profile.settlePoliceCitation(citation);
     expect(citation).toMatchObject({
       packageConfiscated: true,
       possessionFine: GAME_CONFIG.packageDelivery.possessionFine,
-      possessionAmountPaid: GAME_CONFIG.packageDelivery.possessionFine / 2,
+      possessionAmountPaid: GAME_CONFIG.packageDelivery.possessionFine / 2 - 40,
       remainingBalance: 0,
     });
     expect(fixture.profile.money).toBe(0);
