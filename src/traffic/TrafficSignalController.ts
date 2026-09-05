@@ -184,24 +184,24 @@ export class TrafficSignalController {
       headX += roadHalf - headInset;
       headZ -= laneOffset;
       poleX += roadHalf - headInset;
-      poleZ += roadHalf - cornerInset;
+      poleZ -= roadHalf - cornerInset;
       heading = Math.PI / 2;
     } else if (direction === "west") {
       headX -= roadHalf - headInset;
       headZ += laneOffset;
       poleX -= roadHalf - headInset;
-      poleZ -= roadHalf - cornerInset;
+      poleZ += roadHalf - cornerInset;
       heading = -Math.PI / 2;
     } else if (direction === "north") {
       headX -= laneOffset;
       headZ -= roadHalf - headInset;
-      poleX += roadHalf - cornerInset;
+      poleX -= roadHalf - cornerInset;
       poleZ -= roadHalf - headInset;
       heading = Math.PI;
     } else {
       headX += laneOffset;
       headZ += roadHalf - headInset;
-      poleX -= roadHalf - cornerInset;
+      poleX += roadHalf - cornerInset;
       poleZ += roadHalf - headInset;
     }
 

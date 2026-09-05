@@ -233,6 +233,8 @@ export const GAME_CONFIG = {
     spatialCellSize: 48,
     // Increase to check for player collisions farther away; decrease to check only very near cars.
     playerCollisionQueryRadius: 24,
+    // Increase to require a hit to be closer to the exact front of an NPC before blaming it; decrease to include more front-corner impacts.
+    npcFrontImpactAlignment: 0.65,
     // Increase the fully simulated radius around the player; decrease to save CPU with more distant simplification.
     fullSimulationRadius: 520,
     // Increase the reduced-simulation radius; decrease to recycle/simplify distant cars sooner.

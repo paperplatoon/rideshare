@@ -181,17 +181,32 @@ export class TrafficManager {
       car.markCollisionContact(-1);
       const newContact = !this.previousContacts.has(contactKey);
       const { normalX: nx, normalZ: nz, depth } = collision;
-      const relativeVelocityX = player.getVelocityX() - car.getVelocityX();
-      const relativeVelocityZ = player.getVelocityZ() - car.getVelocityZ();
+      const playerVelocityX = player.getVelocityX();
+      const playerVelocityZ = player.getVelocityZ();
+      const carVelocityX = car.getVelocityX();
+      const carVelocityZ = car.getVelocityZ();
+      const relativeVelocityX = playerVelocityX - carVelocityX;
+      const relativeVelocityZ = playerVelocityZ - carVelocityZ;
       const relativeSpeedMph = Math.hypot(relativeVelocityX, relativeVelocityZ) * GAME_CONFIG.ride.mphPerWorldUnitPerSecond;
       const closingSpeedMph = Math.max(0, -(relativeVelocityX * nx + relativeVelocityZ * nz) * GAME_CONFIG.ride.mphPerWorldUnitPerSecond);
       const playerImpactSpeedMph = Math.max(
         0,
-        -(player.getVelocityX() * nx + player.getVelocityZ() * nz)
+        -(playerVelocityX * nx + playerVelocityZ * nz)
           * GAME_CONFIG.ride.mphPerWorldUnitPerSecond,
       );
+      const npcResponsible = isNpcResponsibleForPlayerCollision(
+        car.mesh.rotation.y,
+        nx,
+        nz,
+        carVelocityX,
+        carVelocityZ,
+        playerVelocityX,
+        playerVelocityZ,
+      );
       const directness = relativeSpeedMph > 0 ? closingSpeedMph / relativeSpeedMph : 0;
-      if (newContact) ridePenaltyMph = Math.max(ridePenaltyMph, player.getSpeedMph());
+      if (newContact && !npcResponsible) {
+        ridePenaltyMph = Math.max(ridePenaltyMph, player.getSpeedMph());
+      }
       const carIndex = this.indexByCar.get(car) ?? -1;
       if (newContact && carIndex >= 0 && this.damageCooldownByCar[carIndex] <= 0) {
         const impactSeverity = Math.min(
@@ -205,11 +220,12 @@ export class TrafficManager {
           impactDamage,
           closingSpeedMph >= GAME_CONFIG.traffic.seriousCollisionSpeedMph,
         );
-        if (car.role === "police" && policeCollisionOfficerId === null) {
+        if (!npcResponsible && car.role === "police" && policeCollisionOfficerId === null) {
           policeCollisionOfficerId = car.id;
           policeCollisionSeverity = impactSeverity;
         }
-        if (playerImpactSpeedMph >= GAME_CONFIG.police.collisionMinimumImpactSpeedMph) {
+        if (!npcResponsible
+          && playerImpactSpeedMph >= GAME_CONFIG.police.collisionMinimumImpactSpeedMph) {
           collisionViolationSeverity = Math.max(
             collisionViolationSeverity,
             Math.min(1, playerImpactSpeedMph / GAME_CONFIG.police.collisionFullSeveritySpeedMph),
@@ -493,6 +509,31 @@ export function willVehiclesConflict(
 
 export function shouldAllowIntentionalCrash(rng: () => number, denominator: number): boolean {
   return denominator > 0 && rng() < 1 / denominator;
+}
+
+export function isNpcResponsibleForPlayerCollision(
+  npcHeading: number,
+  collisionNormalX: number,
+  collisionNormalZ: number,
+  npcVelocityX: number,
+  npcVelocityZ: number,
+  playerVelocityX: number,
+  playerVelocityZ: number,
+): boolean {
+  const npcForwardX = Math.sin(npcHeading);
+  const npcForwardZ = Math.cos(npcHeading);
+  const frontAlignment = npcForwardX * collisionNormalX + npcForwardZ * collisionNormalZ;
+  if (frontAlignment < GAME_CONFIG.traffic.npcFrontImpactAlignment) return false;
+
+  const npcImpactSpeed = Math.max(
+    0,
+    npcVelocityX * collisionNormalX + npcVelocityZ * collisionNormalZ,
+  );
+  const playerImpactSpeed = Math.max(
+    0,
+    -(playerVelocityX * collisionNormalX + playerVelocityZ * collisionNormalZ),
+  );
+  return npcImpactSpeed > playerImpactSpeed;
 }
 
 function chooseSafetyYielder(first: TrafficCar, second: TrafficCar): TrafficCar {

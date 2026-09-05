@@ -6,12 +6,21 @@ import { PlayerCar } from "../player/PlayerCar";
 import { TownGenerator } from "../world/Town";
 import {
   TrafficManager,
+  isNpcResponsibleForPlayerCollision,
   shouldAllowIntentionalCrash,
   willVehiclesConflict,
 } from "./TrafficManager";
 import type { TrafficCar } from "./TrafficCar";
 
 describe("TrafficManager", () => {
+  it("attributes front impacts to the NPC only when the NPC contributes more closing speed", () => {
+    expect(isNpcResponsibleForPlayerCollision(0, 0, 1, 0, 20, 0, 0)).toBe(true);
+    expect(isNpcResponsibleForPlayerCollision(0, 0, 1, 0, 20, 0, 8)).toBe(true);
+    expect(isNpcResponsibleForPlayerCollision(0, 0, 1, 0, 10, 0, -20)).toBe(false);
+    expect(isNpcResponsibleForPlayerCollision(0, 1, 0, 0, 20, 0, 0)).toBe(false);
+    expect(isNpcResponsibleForPlayerCollision(0, 0, -1, 0, 20, 0, 0)).toBe(false);
+  });
+
   it("predicts local crossing conflicts and rolls the intentional-crash chance at the boundary", () => {
     const eastbound = predictiveCar(1, -10, 0, 10, 0);
     const southbound = predictiveCar(2, 0, -10, 0, 10);
@@ -125,6 +134,50 @@ describe("TrafficManager", () => {
     civilian.mesh.rotation.y = 0;
     const collision = traffic.update(0, player);
     expect(collision.collisionViolationSeverity).toBeGreaterThan(0);
+    expect(collision.policeCollisionOfficerId).toBeNull();
+
+    traffic.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("keeps damage but suppresses blame when a patrol car hits the player from its front", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const town = new TownGenerator(scene).generate();
+    const player = new PlayerCar(scene, town.roadSpawnPoints);
+    const traffic = new TrafficManager(
+      scene,
+      town.roadSpawnPoints,
+      town.roadPositionsX,
+      town.roadPositionsZ,
+    );
+    player.heading = 0;
+    player.root.rotation.y = 0;
+    for (const car of traffic.cars) {
+      car.mesh.position.set(player.root.position.x + 100, 1, player.root.position.z + 100);
+      car.mesh.rotation.y = 0;
+    }
+
+    const patrolCar = traffic.policeCars[0];
+    const touchingOffset = player.vehicleLength / 2 + GAME_CONFIG.traffic.hitboxLength / 2;
+    patrolCar.mesh.position.set(
+      player.root.position.x,
+      1,
+      player.root.position.z - touchingOffset + 0.5,
+    );
+    patrolCar.mesh.rotation.y = 0;
+    vi.spyOn(player, "getVelocityX").mockReturnValue(0);
+    vi.spyOn(player, "getVelocityZ").mockReturnValue(5);
+    vi.spyOn(player, "getSpeedMph").mockReturnValue(30);
+    vi.spyOn(patrolCar, "getVelocityX").mockReturnValue(0);
+    vi.spyOn(patrolCar, "getVelocityZ").mockReturnValue(20);
+
+    const collision = traffic.update(0, player);
+
+    expect(collision.damagePercent).toBeGreaterThan(0);
+    expect(collision.ridePenaltyMph).toBe(0);
+    expect(collision.collisionViolationSeverity).toBe(0);
     expect(collision.policeCollisionOfficerId).toBeNull();
 
     traffic.dispose();
