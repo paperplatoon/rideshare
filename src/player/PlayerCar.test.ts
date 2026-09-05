@@ -25,6 +25,8 @@ describe("PlayerCar vehicle configuration", () => {
     expect(car.equippedVehicleId).toBe("starter");
     expect(car.getMaxForwardSpeed()).toBe(STARTER_VEHICLE.stats.topSpeed);
     expect(car.vehicleWidth).toBe(STARTER_VEHICLE.appearance.bodyWidth);
+    expect(car.root.getChildMeshes()).toHaveLength(1);
+    expect(car.root.getChildMeshes()[0].getTotalVertices()).toBeGreaterThan(200);
 
     const upgraded = applyPermanentUpgrades(ELITE_VEHICLE.stats, {
       acceleration: 50,

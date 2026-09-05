@@ -1,6 +1,5 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Scene } from "@babylonjs/core/scene";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -12,6 +11,7 @@ import type { Input } from "./Input";
 import type { WorldQuery } from "../world/WorldQuery";
 import { STARTER_VEHICLE } from "../vehicles/VehicleCatalog";
 import type { VehicleDefinition, VehicleStats } from "../vehicles/VehicleTypes";
+import { createLowPolyVehicleMesh } from "../vehicles/VehicleMeshFactory";
 
 export class PlayerCar {
   readonly root: Mesh;
@@ -128,10 +128,10 @@ export class PlayerCar {
     this.effectiveStats = { ...effectiveStats };
   }
 
-  applyTrafficCollision(normalX: number, normalZ: number, depth: number): void {
+  applyTrafficCollision(normalX: number, normalZ: number, depth: number, applyImpact = true): void {
     this.root.position.x += normalX * depth * 1.2;
     this.root.position.z += normalZ * depth * 1.2;
-    this.applyCollisionResponse(normalX, normalZ);
+    if (applyImpact) this.applyCollisionResponse(normalX, normalZ);
   }
 
   private createMesh(vehicle: VehicleDefinition): void {
@@ -140,62 +140,22 @@ export class PlayerCar {
     this.vehicleMeshes = [];
     this.vehicleMaterials = [];
     const appearance = vehicle.appearance;
-    const bodyMat = new StandardMaterial(`player-body-mat-${vehicle.id}`, this.scene);
-    bodyMat.diffuseColor = Color3.FromHexString(appearance.bodyColor);
-    bodyMat.specularColor = Color3.Black();
-    const cabinMat = new StandardMaterial(`player-cabin-mat-${vehicle.id}`, this.scene);
-    cabinMat.diffuseColor = new Color3(0.08, 0.17, 0.22);
-    cabinMat.specularColor = Color3.Black();
-    const wheelMat = new StandardMaterial(`wheel-mat-${vehicle.id}`, this.scene);
-    wheelMat.diffuseColor = new Color3(0.04, 0.04, 0.04);
-    wheelMat.specularColor = Color3.Black();
-    this.vehicleMaterials.push(bodyMat, cabinMat, wheelMat);
-
-    const body = MeshBuilder.CreateBox("player-body", {
-      width: appearance.bodyWidth,
-      height: appearance.bodyHeight,
-      depth: appearance.bodyLength,
-    }, this.scene);
-    body.position.y = 0;
-    body.material = bodyMat;
-    body.parent = this.root;
-    this.vehicleMeshes.push(body);
-
-    const cabin = MeshBuilder.CreateBox("player-cabin", {
-      width: appearance.cabinWidth,
-      height: appearance.cabinHeight,
-      depth: appearance.cabinLength,
-    }, this.scene);
-    cabin.position.set(0, appearance.bodyHeight * 0.72, -appearance.bodyLength * 0.05);
-    cabin.material = cabinMat;
-    cabin.parent = this.root;
-    this.vehicleMeshes.push(cabin);
-
-    const nose = MeshBuilder.CreateBox("player-front", {
-      width: appearance.bodyWidth * 0.36,
-      height: appearance.bodyHeight * 0.19,
-      depth: 0.42,
-    }, this.scene);
-    nose.position.set(0, appearance.bodyHeight * 0.22, appearance.bodyLength / 2 + 0.12);
-    nose.material = cabinMat;
-    nose.parent = this.root;
-    this.vehicleMeshes.push(nose);
-
-    const wheelX = appearance.bodyWidth / 2 + 0.15;
-    const wheelZ = appearance.bodyLength * 0.34;
-    for (const x of [-wheelX, wheelX]) {
-      for (const z of [-wheelZ, wheelZ]) {
-        const wheel = MeshBuilder.CreateBox(`player-wheel-${x}-${z}`, {
-          width: 0.75,
-          height: Math.max(0.8, appearance.bodyHeight * 0.66),
-          depth: Math.max(1.2, appearance.bodyLength * 0.14),
-        }, this.scene);
-        wheel.position.set(x, -appearance.bodyHeight * 0.21, z);
-        wheel.material = wheelMat;
-        wheel.parent = this.root;
-        this.vehicleMeshes.push(wheel);
-      }
-    }
+    const material = new StandardMaterial(`player-vehicle-mat-${vehicle.id}`, this.scene);
+    material.diffuseColor = Color3.White();
+    material.specularColor = new Color3(0.16, 0.16, 0.16);
+    const mesh = createLowPolyVehicleMesh(this.scene, `player-vehicle-${vehicle.id}`, material, {
+      bodyColor: Color3.FromHexString(appearance.bodyColor),
+      bodyLength: appearance.bodyLength,
+      bodyWidth: appearance.bodyWidth,
+      bodyHeight: appearance.bodyHeight,
+      cabinLength: appearance.cabinLength,
+      cabinWidth: appearance.cabinWidth,
+      cabinHeight: appearance.cabinHeight,
+    });
+    mesh.parent = this.root;
+    material.freeze();
+    this.vehicleMaterials.push(material);
+    this.vehicleMeshes.push(mesh);
   }
 
   private simulateHandling(deltaTime: number, input: Input, onSidewalk: boolean, canAccelerate: boolean, damagePercent: number): void {

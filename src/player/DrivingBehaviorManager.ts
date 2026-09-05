@@ -68,9 +68,16 @@ export function evaluateDrivingViolations(
   result: DrivingViolationSeverity = emptySeverity(),
 ): DrivingViolationSeverity {
   const rules = GAME_CONFIG.drivingRules;
-  const speedingStart = rules.speedLimitMph + rules.speedToleranceMph;
+  const context = worldQuery.getRoadContext(
+    sample.x,
+    sample.z,
+    sample.velocityX,
+    sample.velocityZ,
+  );
+  const speedingStart = context.road.speedLimitMph + rules.speedToleranceMph;
+  const fullSpeedingMph = context.road.speedLimitMph + rules.fullSpeedingOverLimitMph;
   result.speeding = clamp(
-    (sample.speedMph - speedingStart) / (rules.fullSpeedingMph - speedingStart),
+    (sample.speedMph - speedingStart) / (fullSpeedingMph - speedingStart),
     0,
     1,
   );
@@ -78,12 +85,6 @@ export function evaluateDrivingViolations(
   result.sidewalk = 0;
 
   if (sample.speedMph >= rules.minimumEvaluationSpeedMph) {
-    const context = worldQuery.getRoadContext(
-      sample.x,
-      sample.z,
-      sample.velocityX,
-      sample.velocityZ,
-    );
     if (!context.inLegalDrivingArea) {
       result.sidewalk = sidewalkOverlap(sample, worldQuery);
       result.wrongSide = wrongSideOverlap(sample, context);

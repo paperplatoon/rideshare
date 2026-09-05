@@ -59,12 +59,21 @@ export class PerformanceMonitor {
       return;
     }
     this.lastDisplayUpdate = now;
+    const activeMeshes = this.scene.getActiveMeshes();
+    let visibleVertices = 0;
+    let visibleTriangles = 0;
+    for (let index = 0; index < activeMeshes.length; index++) {
+      const mesh = activeMeshes.data[index];
+      visibleVertices += mesh.getTotalVertices();
+      visibleTriangles += Math.floor(mesh.getTotalIndices() / 3);
+    }
     const lines = [
       `${this.engine.getFps().toFixed(0)} FPS`,
       `${this.updateMilliseconds.toFixed(2)} ms update`,
       `${this.instrumentation.renderTimeCounter.lastSecAverage.toFixed(2)} ms render`,
       `${this.instrumentation.drawCallsCounter.current} draw calls`,
       `${this.scene.getActiveMeshes().length}/${this.scene.meshes.length} meshes`,
+      `${formatCount(visibleTriangles)} triangles / ${formatCount(visibleVertices)} vertices`,
       `${activeAiCount} active AI`,
       `${collisionCandidates} collision candidates`,
     ];
@@ -83,4 +92,10 @@ export class PerformanceMonitor {
     this.instrumentation?.dispose();
     this.element?.remove();
   }
+}
+
+function formatCount(value: number): string {
+  if (value < 1000) return `${value}`;
+  if (value < 1_000_000) return `${(value / 1000).toFixed(1)}k`;
+  return `${(value / 1_000_000).toFixed(2)}m`;
 }

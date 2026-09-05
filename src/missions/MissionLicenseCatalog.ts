@@ -20,7 +20,7 @@ export const MISSION_LICENSES: readonly MissionLicenseDefinition[] = [
   {
     id: "rideshare",
     name: "Rideshare",
-    tabLabel: "RIDESHARE",
+    tabLabel: "RIDE",
     description: "Standard passenger rides with regular fares.",
     unlockCost: GAME_CONFIG.progression.missionLicenseUnlockCosts.rideshare,
     fareMultiplier: 1,
@@ -42,7 +42,7 @@ export const MISSION_LICENSES: readonly MissionLicenseDefinition[] = [
   {
     id: "rideshare_silver",
     name: "Rideshare Silver",
-    tabLabel: "RIDESHARE SILVER",
+    tabLabel: "SILVER",
     description: "Premium rides with triple base fares and larger tips, but strict driving standards.",
     unlockCost: GAME_CONFIG.progression.missionLicenseUnlockCosts.rideshare_silver,
     fareMultiplier: 3,
@@ -55,7 +55,7 @@ export const MISSION_LICENSES: readonly MissionLicenseDefinition[] = [
   {
     id: "package_delivery",
     name: "Package Delivery",
-    tabLabel: "PACKAGES",
+    tabLabel: "PACKAGE",
     description: "Time-sensitive package deliveries with rapidly declining payouts.",
     unlockCost: GAME_CONFIG.progression.missionLicenseUnlockCosts.package_delivery,
     fareMultiplier: 1,

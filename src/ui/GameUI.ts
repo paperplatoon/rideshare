@@ -6,7 +6,7 @@ import type { DamageManager } from "../player/DamageManager";
 import type { PoliceManager } from "../police/PoliceManager";
 import { PackageDeliveryState, type PackageDeliveryManager } from "../delivery/PackageDeliveryManager";
 import { GAME_CONFIG } from "../game/config";
-import { RideState, type PoliceCitation, type RideHistoryEntry, type RideOffer } from "../game/types";
+import { PassengerType, RideState, type PoliceCitation, type RideHistoryEntry, type RideOffer } from "../game/types";
 import type { Town } from "../world/Town";
 import { distanceXZ, normalizeAngle } from "../utils/math";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -20,6 +20,7 @@ import {
   type MissionLicenseDefinition,
   type MissionLicenseId,
 } from "../missions/MissionLicenseCatalog";
+import { projectMapHeight, projectMapPoint, projectMapWidth } from "./MapProjection";
 
 export interface GameUIActions {
   start(): void;
@@ -58,7 +59,9 @@ export class GameUI {
   private readonly citationOverlay: HTMLDivElement;
   private readonly policeMeter: HTMLDivElement;
   private readonly policeMeterLabel: HTMLDivElement;
+  private readonly policeFineLabel: HTMLDivElement;
   private readonly policeMeterFill: HTMLDivElement;
+  private readonly policeEscapeFill: HTMLDivElement;
   private readonly debugProgression: HTMLDivElement | null;
   private readonly startButton: HTMLButtonElement;
   private readonly moneyValue: HTMLDivElement;
@@ -80,12 +83,16 @@ export class GameUI {
   private mapOpen = false;
   private refuelHeld = false;
   private repairHeld = false;
-  private mapRefreshElapsed = 0;
   private lastRideHudHtml = "";
   private lastPhoneHtml = "";
-  private lastMapHtml = "";
   private lastRideResultHtml = "";
+  private mapTown: Town | null = null;
+  private mapPlayer: HTMLDivElement | null = null;
+  private mapPickup: HTMLDivElement | null = null;
+  private mapDropoff: HTMLDivElement | null = null;
   private phoneTab: MissionLicenseId | "garage" | "upgrades" | "scorecard" = "rideshare";
+  private garagePage = 0;
+  private scorecardPage = 0;
   private phoneFeedback = "";
   private phoneFeedbackSeconds = 0;
   private pausedProfile: PlayerProfile | null = null;
@@ -142,23 +149,32 @@ export class GameUI {
     this.hud = document.createElement("div");
     this.hud.className = "hud hidden";
     this.hud.innerHTML = `
-      <div data-hud="money"></div>
-      <div data-hud="rides"></div>
-      <div class="speedometer" data-hud="speed"></div>
-      <div class="fuel-meter" data-hud="fuel">
-        <div class="fuel-label" data-hud="fuel-label"></div>
-        <div class="fuel-track"><div class="fuel-fill" data-hud="fuel-fill"></div></div>
-      </div>
-      <div class="damage-meter" data-hud="damage">
-        <div class="damage-label" data-hud="damage-label"></div>
-        <div class="damage-track"><div class="damage-fill" data-hud="damage-fill"></div></div>
+      <div class="hud-stats" data-hud="stats">
+        <div class="hud-stat" data-hud="money"></div>
+        <div class="hud-stat" data-hud="rides"></div>
+        <div class="hud-stat speedometer" data-hud="speed"></div>
+        <div class="fuel-meter" data-hud="fuel">
+          <div class="fuel-label" data-hud="fuel-label"></div>
+          <div class="fuel-track"><div class="fuel-fill" data-hud="fuel-fill"></div></div>
+        </div>
+        <div class="damage-meter" data-hud="damage">
+          <div class="damage-label" data-hud="damage-label"></div>
+          <div class="damage-track"><div class="damage-fill" data-hud="damage-fill"></div></div>
+        </div>
       </div>
       <div class="police-meter hidden" data-hud="police">
         <div class="police-meter-label" data-hud="police-label"></div>
-        <div class="police-meter-track"><div class="police-meter-fill" data-hud="police-fill"></div></div>
+        <div class="police-fine-label hidden" data-hud="police-fine"></div>
+        <div class="police-meter-track">
+          <div class="police-meter-fill" data-hud="police-fill"></div>
+          <div class="police-escape-fill" data-hud="police-escape-fill"></div>
+        </div>
       </div>
       <div class="refuel-status hidden" data-hud="refuel">REFUELING</div>
-      <div data-hud="ride"></div>
+      <div class="mission-row">
+        <div class="ride-hud" data-hud="ride"></div>
+        <div class="indicator hidden" data-hud="indicator"><span class="arrow">↑</span><span data-indicator="distance"></span></div>
+      </div>
       <div class="collision-flash hidden" data-hud="collision"></div>
     `;
     this.moneyValue = this.hud.querySelector('[data-hud="money"]')!;
@@ -172,22 +188,34 @@ export class GameUI {
     this.damageFill = this.hud.querySelector('[data-hud="damage-fill"]')!;
     this.policeMeter = this.hud.querySelector('[data-hud="police"]')!;
     this.policeMeterLabel = this.hud.querySelector('[data-hud="police-label"]')!;
+    this.policeFineLabel = this.hud.querySelector('[data-hud="police-fine"]')!;
     this.policeMeterFill = this.hud.querySelector('[data-hud="police-fill"]')!;
+    this.policeEscapeFill = this.hud.querySelector('[data-hud="police-escape-fill"]')!;
     this.refuelStatus = this.hud.querySelector('[data-hud="refuel"]')!;
     this.rideHud = this.hud.querySelector('[data-hud="ride"]')!;
     this.collisionFlash = this.hud.querySelector('[data-hud="collision"]')!;
-    this.indicator = document.createElement("div");
-    this.indicator.className = "indicator hidden";
-    this.indicator.innerHTML = '<span class="arrow">↑</span><span data-indicator="distance"></span>';
+    this.indicator = this.hud.querySelector('[data-hud="indicator"]')!;
     this.indicatorArrow = this.indicator.querySelector(".arrow")!;
     this.indicatorDistance = this.indicator.querySelector('[data-indicator="distance"]')!;
     this.phone = document.createElement("div");
     this.phone.className = "phone-overlay hidden";
     this.phone.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
+      if (target.closest("[data-phone-close]")) {
+        this.closePhone();
+        return;
+      }
       const tab = target.closest<HTMLButtonElement>("[data-phone-tab]");
       if (tab) {
         this.phoneTab = (tab.dataset.phoneTab as typeof this.phoneTab) ?? "rideshare";
+        this.lastPhoneHtml = "";
+        return;
+      }
+      const pageButton = target.closest<HTMLButtonElement>("[data-phone-page]");
+      if (pageButton && !pageButton.disabled) {
+        const delta = Number(pageButton.dataset.pageDelta ?? 0);
+        if (pageButton.dataset.phonePage === "garage") this.garagePage += delta;
+        if (pageButton.dataset.phonePage === "scorecard") this.scorecardPage += delta;
         this.lastPhoneHtml = "";
         return;
       }
@@ -290,7 +318,7 @@ export class GameUI {
       ? this.createDebugProgressionPanel()
       : null;
 
-    root.append(this.startScreen, this.pauseScreen, this.hud, this.indicator, this.phone, this.map, this.refuelOverlay, this.repairOverlay, this.rideResult, this.citationOverlay);
+    root.append(this.startScreen, this.pauseScreen, this.hud, this.phone, this.map, this.refuelOverlay, this.repairOverlay, this.rideResult, this.citationOverlay);
     if (this.debugProgression) root.append(this.debugProgression);
   }
 
@@ -347,18 +375,30 @@ export class GameUI {
     this.mapOpen = false;
     this.refuelHeld = false;
     this.repairHeld = false;
-    const payment = citation.amountPaid > 0 ? `${this.money(citation.amountPaid)} PAID` : "NO FUNDS COLLECTED";
+    const basePayment = citation.amountPaid > 0 ? `${this.money(citation.amountPaid)} PAID` : "NO FUNDS COLLECTED";
+    const resistingPenalty = citation.resistingArrestFine > 0
+      ? `<div class="citation-offense">RESISTING ARREST</div>
+        <div class="citation-payment">FINE ${this.money(citation.resistingArrestFine)} · ${this.money(citation.resistingArrestAmountPaid)} PAID</div>`
+      : "";
     const packagePenalty = citation.packageConfiscated
       ? `<div class="citation-offense">PACKAGE CONFISCATED</div>
         <div class="citation-payment">POSSESSION FINE ${this.money(citation.possessionFine ?? 0)} · ${this.money(citation.possessionAmountPaid ?? 0)} PAID</div>`
       : "";
+    const totalAssessed = citation.assessedFine
+      + citation.resistingArrestFine
+      + (citation.possessionFine ?? 0);
+    const totalPaid = citation.amountPaid
+      + citation.resistingArrestAmountPaid
+      + (citation.possessionAmountPaid ?? 0);
     this.citationOverlay.innerHTML = `
       <div class="citation-panel">
         <div class="citation-agency">CITY POLICE</div>
         <div class="citation-title">CITATION</div>
         <div class="citation-offense">${citation.offense}</div>
-        <div class="citation-payment">${payment}</div>
+        <div class="citation-payment">FINE ${this.money(citation.assessedFine)} · ${basePayment}</div>
+        ${resistingPenalty}
         ${packagePenalty}
+        <div class="citation-payment">TOTAL ${this.money(totalAssessed)} · ${this.money(totalPaid)} PAID</div>
         <div class="citation-balance">BALANCE ${this.money(citation.remainingBalance)}</div>
         <button type="button" data-citation-continue>CONTINUE</button>
       </div>
@@ -382,7 +422,6 @@ export class GameUI {
   toggleMap(): void {
     this.mapOpen = !this.mapOpen;
     this.map.classList.toggle("hidden", !this.mapOpen);
-    this.mapRefreshElapsed = GAME_CONFIG.map.refreshSeconds;
   }
 
   get isRefuelHeld(): boolean {
@@ -417,7 +456,7 @@ export class GameUI {
     const fuelPercent = Math.round(fuel.fuelPercent * 100);
     const damagePercent = Math.round(damage.damagePercent * 100);
     const walletMoney = ride.totalMoney;
-    this.moneyValue.textContent = `MONEY: $${ride.totalMoney.toFixed(2)}`;
+    this.moneyValue.textContent = `$${ride.totalMoney.toFixed(2)}`;
     this.ridesValue.textContent = `RIDES: ${ride.completedRides}`;
     this.speedometer.textContent = speedLabel;
     this.speedometer.classList.toggle("warning", speedWarning);
@@ -427,19 +466,30 @@ export class GameUI {
     this.damageMeter.classList.toggle("damaged", damage.damagePercent > 0);
     this.damageLabel.textContent = `DAMAGE ${damagePercent}/100`;
     this.damageFill.style.width = `${damagePercent}%`;
-    const policePercent = Math.round(police.warning.progress * 100);
-    this.policeMeter.classList.toggle("hidden", police.warning.phase === "idle" && policePercent <= 0);
-    this.policeMeter.classList.toggle("observing", police.warning.activelyObserving);
-    if (police.warning.phase === "pursuit") {
-      this.policeMeterLabel.textContent = "POLICE PURSUIT";
-    } else if (police.warning.phase === "busting") {
-      this.policeMeterLabel.textContent = "POLICE BUSTING";
-    } else {
-      this.policeMeterLabel.textContent = police.warning.activelyObserving
-        ? "POLICE OBSERVING"
-        : "POLICE SUSPICION";
+    const policePercent = Math.round(police.warning.hudProgress * 100);
+    const escapePercent = Math.round(police.warning.escapeProgress * 100);
+    this.policeMeter.classList.toggle("hidden", police.warning.hudMode === "idle" && policePercent <= 0);
+    this.policeMeter.classList.remove("observing", "resisting", "arresting", "fleeing", "escaping");
+    if (police.warning.hudMode !== "idle") this.policeMeter.classList.add(police.warning.hudMode);
+    const policeLabels: Record<typeof police.warning.hudMode, string> = {
+      idle: "POLICE SUSPICION",
+      observing: police.warning.activelyObserving
+        ? `OBSERVING: ${police.warning.observedOffense ?? "VIOLATION"}`
+        : "POLICE SUSPICION",
+      resisting: "RESISTING ARREST",
+      arresting: "ARRESTING",
+      fleeing: "FLEEING",
+      escaping: "ESCAPING",
+    };
+    this.policeMeterLabel.textContent = policeLabels[police.warning.hudMode];
+    this.policeFineLabel.classList.toggle("hidden", !police.isPursuitActive);
+    if (police.isPursuitActive) {
+      this.policeFineLabel.textContent = `${this.money(police.warning.potentialFine)} FINE IF CAUGHT`;
     }
     this.policeMeterFill.style.width = `${policePercent}%`;
+    this.policeEscapeFill.style.width = police.warning.hudMode === "escaping"
+      ? `${escapePercent}%`
+      : "0%";
     this.refuelStatus.classList.toggle("hidden", !fuel.isRefueling);
     this.updateRefuelOverlay(fuel, fuelPercent, walletMoney);
     this.updateRepairOverlay(damage, damagePercent, walletMoney);
@@ -460,11 +510,7 @@ export class GameUI {
       }
     }
     if (this.mapOpen) {
-      this.mapRefreshElapsed += deltaTime;
-      if (this.mapRefreshElapsed >= GAME_CONFIG.map.refreshSeconds) {
-        this.mapRefreshElapsed = 0;
-        this.renderMap(ride, packageDelivery, player, town);
-      }
+      this.renderMap(ride, packageDelivery, player, town);
     }
     this.renderActivityResult(ride, packageDelivery);
   }
@@ -541,18 +587,24 @@ export class GameUI {
 
     this.setHtml(this.phone, "lastPhoneHtml", `
       <div class="phone-panel">
-        <div class="phone-header">
-          <div class="phone-tabs" role="tablist">
-            ${MISSION_LICENSES.map((license) => this.phoneTabButton(license.id, license.tabLabel)).join("")}
-            ${this.phoneTabButton("garage", "GARAGE")}
-            ${this.phoneTabButton("upgrades", "UPGRADES")}
-            ${this.phoneTabButton("scorecard", "SCORECARD")}
+        <div class="phone-topbar">
+          <span class="phone-brand">DRIVER</span>
+          <div class="phone-topbar-actions">
+            <div class="phone-balance">${this.money(profile.money)}</div>
+            <button type="button" class="phone-close" data-phone-close aria-label="Close phone" title="Close phone">&times;</button>
           </div>
-          <div class="phone-balance">BALANCE ${this.money(profile.money)}</div>
         </div>
-        ${this.phoneFeedback ? `<div class="phone-feedback">${this.phoneFeedback}</div>` : ""}
-        ${content}
-        <div class="phone-close-hint">P TO CLOSE · ESC TO PAUSE</div>
+        <div class="phone-tabs" role="tablist">
+          ${MISSION_LICENSES.map((license) => this.phoneTabButton(license.id, license.tabLabel)).join("")}
+          ${this.phoneTabButton("garage", "GARAGE")}
+          ${this.phoneTabButton("upgrades", "UPGRADES")}
+          ${this.phoneTabButton("scorecard", "HISTORY")}
+        </div>
+        <div class="phone-screen">
+          ${this.phoneFeedback ? `<div class="phone-feedback">${this.phoneFeedback}</div>` : ""}
+          ${content}
+        </div>
+        <div class="phone-home-indicator" aria-hidden="true"></div>
       </div>
     `);
   }
@@ -614,20 +666,18 @@ export class GameUI {
       ${unavailable ? '<div class="mission-status">CURRENT RIDE IN PROGRESS · NEW JOBS UNAVAILABLE</div>' : ""}
       <div class="offer-list">
         <div class="offer-card">
-          <div>
+          <div class="offer-heading">
             <div class="ride-name">PRIORITY COURIER JOB</div>
-            <div class="ride-tier">TIME SENSITIVE</div>
-          </div>
-          <div class="ride-details">
-            <div>Pickup: ${Math.round(offer.pickupDistance)} m away</div>
-            <div>Delivery: ${Math.round(offer.tripDistance)} m</div>
-            <div>Starting Rate: ${this.money(GAME_CONFIG.packageDelivery.ratePerMeter)} / m</div>
-            <div>Starting Payout: ${this.money(offer.initialPayout)}</div>
-            <div>Rate declines ${GAME_CONFIG.packageDelivery.fareDecayPercentPerSecond * 100}% / sec after acceptance</div>
+            <div class="ride-type">TIME SENSITIVE</div>
           </div>
           <button type="button" data-package-delivery-id="${offer.id}" ${unavailable ? "disabled" : ""}>
             ${unavailable ? "MISSION IN PROGRESS" : "ACCEPT"}
           </button>
+          <div class="ride-details">
+            ${this.offerMetric("PICKUP", `${Math.round(offer.pickupDistance)} m`)}
+            ${this.offerMetric("TRIP", `${Math.round(offer.tripDistance)} m`)}
+            ${this.offerMetric("BASE PAY", this.money(offer.initialPayout))}
+          </div>
         </div>
       </div>
     `;
@@ -647,7 +697,7 @@ export class GameUI {
         <div class="phone-title">CURRENT ${category.name.toUpperCase()} RIDE</div>
         <div class="current-ride-card">
           <div class="ride-name">${ride.activeRide.passengerName}</div>
-          <div class="ride-type">${ride.activeRide.passengerType}</div>
+          ${this.passengerTypeBadge(ride.activeRide.passengerType)}
           <div>${status}</div>
           <div>${distance} m away</div>
           <div>Base Fare: ${this.money(ride.activeRide.baseFare)}</div>
@@ -680,10 +730,17 @@ export class GameUI {
 
   private renderGarage(profile: PlayerProfile, player: PlayerCar): string {
     const stopped = player.getSpeedMph() <= GAME_CONFIG.progression.equipMaxSpeedMph;
+    const pageSize = 2;
+    const pageCount = Math.max(1, Math.ceil(VEHICLE_CATALOG.length / pageSize));
+    this.garagePage = Math.max(0, Math.min(this.garagePage, pageCount - 1));
+    const vehicles = VEHICLE_CATALOG.slice(this.garagePage * pageSize, (this.garagePage + 1) * pageSize);
     return `
-      <div class="phone-title">VEHICLE GARAGE</div>
+      <div class="phone-title-row">
+        <div class="phone-title">VEHICLE GARAGE</div>
+        ${this.phonePagination("garage", this.garagePage, pageCount)}
+      </div>
       <div class="garage-list">
-        ${VEHICLE_CATALOG.map((vehicle) => this.vehicleCard(vehicle, profile, stopped)).join("")}
+        ${vehicles.map((vehicle) => this.vehicleCard(vehicle, profile, stopped)).join("")}
       </div>
     `;
   }
@@ -749,6 +806,10 @@ export class GameUI {
 
   private renderScorecard(profile: PlayerProfile): string {
     const history = profile.rideHistory;
+    const pageSize = 1;
+    const pageCount = Math.max(1, Math.ceil(history.length / pageSize));
+    this.scorecardPage = Math.max(0, Math.min(this.scorecardPage, pageCount - 1));
+    const visibleHistory = history.slice(this.scorecardPage * pageSize, (this.scorecardPage + 1) * pageSize);
     const recordedEarnings = history.reduce((sum, ride) => sum + ride.total, 0);
     const recordedTips = history.reduce((sum, ride) => sum + ride.tip, 0);
     const averageStars = history.length > 0
@@ -761,7 +822,10 @@ export class GameUI {
       ? "Detailed scorecards will be recorded for new rides."
       : "Completed rides will appear here.";
     return `
-      <div class="phone-title">RIDE SCORECARD</div>
+      <div class="phone-title-row">
+        <div class="phone-title">RIDE SCORECARD</div>
+        ${history.length > 0 ? this.phonePagination("scorecard", this.scorecardPage, pageCount) : ""}
+      </div>
       <div class="scorecard-summary">
         ${this.scorecardSummaryStat(profile.completedRides.toLocaleString("en-US"), "LIFETIME RIDES")}
         ${this.scorecardSummaryStat(history.length > 0 ? averageStars.toFixed(1) : "-", "AVERAGE STARS")}
@@ -770,19 +834,20 @@ export class GameUI {
       </div>
       ${limitNote}
       ${history.length > 0
-        ? `<div class="scorecard-list">${history.map((ride) => this.rideScorecard(ride)).join("")}</div>`
+        ? `<div class="scorecard-list">${visibleHistory.map((ride) => this.rideScorecard(ride)).join("")}</div>`
         : `<div class="scorecard-empty"><strong>NO RECORDED RIDES</strong><span>${emptyMessage}</span></div>`}
     `;
   }
 
   private rideScorecard(ride: RideHistoryEntry): string {
     const totalDistance = ride.pickupDistance + ride.tripDistance;
+    const passengerType = ride.passengerType === PassengerType.Normal ? "" : ` · ${ride.passengerType}`;
     return `
       <div class="ride-scorecard">
         <div class="scorecard-heading">
           <div>
             <div class="vehicle-name">${ride.passengerName}</div>
-            <div class="ride-type">${getMissionLicense(ride.missionCategoryId)?.name.toUpperCase() ?? "RIDESHARE"} · ${ride.passengerType} · ${ride.rideTier}</div>
+            <div class="ride-type">${getMissionLicense(ride.missionCategoryId)?.name.toUpperCase() ?? "RIDESHARE"}${passengerType} · ${ride.rideTier}</div>
           </div>
           <div class="scorecard-date">${this.completedDate(ride.completedAt)}</div>
         </div>
@@ -856,6 +921,16 @@ export class GameUI {
     return `<button type="button" class="phone-tab ${this.phoneTab === tab ? "active" : ""}" data-phone-tab="${tab}" role="tab" aria-selected="${this.phoneTab === tab}">${label}</button>`;
   }
 
+  private phonePagination(section: "garage" | "scorecard", page: number, pageCount: number): string {
+    return `
+      <div class="phone-pagination" aria-label="${section} pages">
+        <button type="button" data-phone-page="${section}" data-page-delta="-1" aria-label="Previous page" ${page <= 0 ? "disabled" : ""}>&lsaquo;</button>
+        <span>${page + 1} / ${pageCount}</span>
+        <button type="button" data-phone-page="${section}" data-page-delta="1" aria-label="Next page" ${page >= pageCount - 1 ? "disabled" : ""}>&rsaquo;</button>
+      </div>
+    `;
+  }
+
   private showPhoneFeedback(message: string): void {
     this.phoneFeedback = message;
     this.phoneFeedbackSeconds = 2.5;
@@ -868,44 +943,65 @@ export class GameUI {
     player: PlayerCar,
     town: Town,
   ): void {
-    const playerPoint = this.mapPoint(player.root.position.x, player.root.position.z, town);
-    const playerRotation = Math.PI - player.heading;
+    if (this.mapTown !== town || !this.mapPlayer || !this.mapPickup || !this.mapDropoff) {
+      this.buildMap(town);
+    }
+
+    const playerPoint = projectMapPoint(player.root.position.x, player.root.position.z, town);
+    this.mapPlayer!.style.left = `${playerPoint.x}%`;
+    this.mapPlayer!.style.top = `${playerPoint.y}%`;
+    this.mapPlayer!.style.transform = `translate(-50%, -50%) rotate(${player.heading}rad)`;
+
+    const activeRide = ride.activeRide;
+    const activePackage = packageDelivery.activeOffer;
+    const pickup = activeRide?.pickupPoint ?? activePackage?.pickupPoint ?? null;
+    const destination = activeRide?.destinationPoint ?? activePackage?.destinationPoint ?? null;
+    const drivingToPickup = (activeRide !== null && ride.state === RideState.DrivingToPickup)
+      || (activePackage !== null && packageDelivery.state === PackageDeliveryState.DrivingToPickup);
+
+    this.updateObjectiveMapMarker(this.mapPickup!, pickup?.position.x, pickup?.position.z, town, {
+      current: drivingToPickup,
+      completed: pickup !== null && !drivingToPickup,
+      label: "P",
+    });
+    this.updateObjectiveMapMarker(this.mapDropoff!, destination?.position.x, destination?.position.z, town, {
+      current: destination !== null && !drivingToPickup,
+      completed: false,
+      label: "D",
+    });
+  }
+
+  private buildMap(town: Town): void {
+    const roadWidth = projectMapWidth(GAME_CONFIG.world.roadWidth, town);
+    const roadHeight = projectMapHeight(GAME_CONFIG.world.roadWidth, town);
+    const roads = town.roads.map((road) => {
+      const point = road.axis === "northSouth"
+        ? projectMapPoint(road.center, 0, town)
+        : projectMapPoint(0, road.center, town);
+      const style = road.axis === "northSouth"
+        ? `left:${point.x}%;width:${roadWidth}%`
+        : `top:${point.y}%;height:${roadHeight}%`;
+      return `<div class="map-road ${road.axis} ${road.type}" style="${style}"></div>`;
+    }).join("");
     const gasMarkers = town.gasStations.map((station) => {
-      const point = this.mapPoint(station.position.x, station.position.z, town);
+      const point = projectMapPoint(station.position.x, station.position.z, town);
       return `<div class="map-marker gas" style="left:${point.x}%;top:${point.y}%">G</div>`;
     }).join("");
     const repairMarkers = town.autoBodyShops.map((shop) => {
-      const point = this.mapPoint(shop.position.x, shop.position.z, town);
+      const point = projectMapPoint(shop.position.x, shop.position.z, town);
       return `<div class="map-marker repair" style="left:${point.x}%;top:${point.y}%">A</div>`;
     }).join("");
-    const activeRide = ride.activeRide;
-    const activePackage = packageDelivery.activeOffer;
-    const pickup = activeRide && ride.state === RideState.DrivingToPickup
-      ? activeRide.pickupPoint
-      : activePackage && packageDelivery.state === PackageDeliveryState.DrivingToPickup
-        ? activePackage.pickupPoint
-        : null;
-    const destination = activeRide && ride.state === RideState.PassengerOnboard
-      ? activeRide.destinationPoint
-      : activePackage && packageDelivery.state === PackageDeliveryState.CarryingPackage
-        ? activePackage.destinationPoint
-        : null;
-    const pickupMarker = pickup
-      ? this.objectiveMapMarker(pickup.position.x, pickup.position.z, town, "pickup", "P")
-      : "";
-    const destinationMarker = destination
-      ? this.objectiveMapMarker(destination.position.x, destination.position.z, town, "dropoff", "D")
-      : "";
 
-    this.setHtml(this.map, "lastMapHtml", `
+    this.map.innerHTML = `
       <div class="map-panel">
         <div class="map-title">MAP</div>
         <div class="map-canvas">
+          ${roads}
           ${gasMarkers}
           ${repairMarkers}
-          ${pickupMarker}
-          ${destinationMarker}
-          <div class="map-player" style="left:${playerPoint.x}%;top:${playerPoint.y}%;transform: translate(-50%, -50%) rotate(${playerRotation}rad)">▲</div>
+          <div class="map-marker pickup hidden" data-map="pickup">P</div>
+          <div class="map-marker dropoff hidden" data-map="dropoff">D</div>
+          <div class="map-player" data-map="player">▲</div>
         </div>
         <div class="map-legend">
           <span><b class="legend-player"></b>Player</span>
@@ -916,47 +1012,57 @@ export class GameUI {
         </div>
         <div class="phone-close-hint">M TO CLOSE · ESC TO PAUSE</div>
       </div>
-    `);
+    `;
+    this.mapTown = town;
+    this.mapPlayer = this.map.querySelector('[data-map="player"]')!;
+    this.mapPickup = this.map.querySelector('[data-map="pickup"]')!;
+    this.mapDropoff = this.map.querySelector('[data-map="dropoff"]')!;
   }
 
-  private objectiveMapMarker(x: number, z: number, town: Town, className: string, label: string): string {
-    const point = this.mapPoint(x, z, town);
-    return `<div class="map-marker ${className}" style="left:${point.x}%;top:${point.y}%">${label}</div>`;
-  }
-
-  private mapPoint(x: number, z: number, town: Town): { x: number; y: number } {
-    const percentX = ((x - town.minX) / (town.maxX - town.minX)) * 100;
-    const percentY = 100 - ((z - town.minZ) / (town.maxZ - town.minZ)) * 100;
-    return {
-      x: Math.max(1, Math.min(99, percentX)),
-      y: Math.max(1, Math.min(99, percentY)),
-    };
+  private updateObjectiveMapMarker(
+    marker: HTMLDivElement,
+    x: number | undefined,
+    z: number | undefined,
+    town: Town,
+    state: { current: boolean; completed: boolean; label: string },
+  ): void {
+    const visible = x !== undefined && z !== undefined;
+    marker.classList.toggle("hidden", !visible);
+    if (!visible) return;
+    const point = projectMapPoint(x, z, town);
+    marker.style.left = `${point.x}%`;
+    marker.style.top = `${point.y}%`;
+    marker.textContent = state.completed ? "✓" : state.label;
+    marker.classList.toggle("current", state.current);
+    marker.classList.toggle("completed", state.completed);
+    marker.classList.toggle("upcoming", !state.current && !state.completed);
   }
 
   private offerCard(offer: RideOffer, disabled = false): string {
-    const expires = Math.max(0, Math.ceil(GAME_CONFIG.ride.offerLifetimeSeconds - offer.ageSeconds));
-    const totalDistance = offer.pickupDistance + offer.tripDistance;
-    const dollarsPerHundredMeters = totalDistance > 0 ? (offer.baseFare / totalDistance) * 100 : 0;
     return `
       <div class="offer-card">
-        <div>
+        <div class="offer-heading">
           <div class="ride-name">${offer.passengerName}</div>
-          <div class="ride-tier">${offer.tier}</div>
-          <div class="ride-type">${offer.passengerType}</div>
-        </div>
-        <div class="ride-details">
-          <div>Pickup: ${Math.round(offer.pickupDistance)} m away</div>
-          <div>Trip: ${Math.round(offer.tripDistance)} m</div>
-          <div>Total: ${Math.round(totalDistance)} m</div>
-          <div>Base Fare: ${this.money(offer.baseFare)}</div>
-          <div>Value: ${this.money(dollarsPerHundredMeters)} / 100 m</div>
-          <div class="${expires <= 10 ? "expires urgent" : "expires"}">Expires in ${expires}s</div>
+          ${this.passengerTypeBadge(offer.passengerType)}
         </div>
         <button type="button" data-ride-id="${offer.id}" data-ride-category="${offer.missionCategoryId}" ${disabled ? "disabled" : ""}>
           ${disabled ? "RIDE IN PROGRESS" : "ACCEPT"}
         </button>
+        <div class="ride-details">
+          ${this.offerMetric("PICKUP", `${Math.round(offer.pickupDistance)} m`)}
+          ${this.offerMetric("TRIP", `${Math.round(offer.tripDistance)} m`)}
+          ${this.offerMetric("BASE FARE", this.money(offer.baseFare))}
+        </div>
       </div>
     `;
+  }
+
+  private offerMetric(label: string, value: string): string {
+    return `<div><span>${label}</span><strong>${value}</strong></div>`;
+  }
+
+  private passengerTypeBadge(passengerType: PassengerType): string {
+    return passengerType === PassengerType.Normal ? "" : `<div class="ride-type">${passengerType}</div>`;
   }
 
   private activeActivityHudLine(
@@ -965,10 +1071,6 @@ export class GameUI {
     player: PlayerCar,
   ): string {
     if (packageDelivery.activeOffer) {
-      const target = packageDelivery.getObjectivePosition();
-      const distance = target
-        ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
-        : 0;
       const objective = packageDelivery.state === PackageDeliveryState.DrivingToPickup
         ? "COLLECT PACKAGE"
         : "DELIVER PACKAGE";
@@ -976,37 +1078,37 @@ export class GameUI {
         <div class="objective">PACKAGE DELIVERY · ${objective}</div>
         <div>PAYOUT: ${this.money(packageDelivery.currentPayout)}</div>
         <div>RATE: ${this.money(packageDelivery.currentRatePerMeter)} / M</div>
-        <div>${distance} m</div>
       `;
     }
     if (!ride.activeRide) {
       return `<div class="objective">PRESS P FOR RIDES</div>`;
     }
-    const target = ride.getObjectivePosition();
-    const distance = target
-      ? Math.round(distanceXZ(player.root.position, target) * GAME_CONFIG.ride.metersPerWorldUnit)
-      : 0;
     const arrivalWarning = ride.isWaitingForArrivalSpeed(player)
       ? `<div>SLOW BELOW ${GAME_CONFIG.ride.maximumArrivalSpeedMph} MPH</div>`
       : "";
     if (ride.state === RideState.DrivingToPickup) {
       const category = getMissionLicense(ride.activeRide.missionCategoryId);
       return `
-        <div class="objective">${category?.name.toUpperCase() ?? "RIDE"} · PICK UP: ${ride.activeRide.passengerName}</div>
-        <div>${ride.activeRide.passengerType}</div>
-        <div>${distance} m</div>
+        <div class="objective">${category?.name.toUpperCase() ?? "RIDE"} · PICK UP: ${this.passengerNameWithTrait(ride.activeRide.passengerName, ride.activeRide.passengerType)}</div>
         ${arrivalWarning}
       `;
     }
+    const tipPenalty = ride.violationTipPenaltyPercent > 0
+      ? `<span class="ride-tip-penalty">-${Math.round(ride.violationTipPenaltyPercent)}%</span>`
+      : "";
     return `
-      <div class="objective">${getMissionLicense(ride.activeRide.missionCategoryId)?.name.toUpperCase() ?? "RIDE"} · ${ride.activeRide.passengerName}</div>
-      <div>${ride.activeRide.passengerType}</div>
-      <div>${this.stars(ride.getStars())}</div>
-      <div>TIP: ${this.money(ride.getCurrentTip())}</div>
-      ${ride.violationTipPenaltyPercent > 0 ? `<div>ILLEGAL DRIVING: ${ride.currentViolationPoints.toFixed(1)} PTS · TIP -${Math.round(ride.violationTipPenaltyPercent)}%</div>` : ""}
-      <div>${distance} m</div>
+      <div class="objective">${getMissionLicense(ride.activeRide.missionCategoryId)?.name.toUpperCase() ?? "RIDE"} · ${this.passengerNameWithTrait(ride.activeRide.passengerName, ride.activeRide.passengerType)}</div>
+      <div class="ride-score-line">
+        <span class="ride-stars">${this.stars(ride.getStars())}</span>
+        <span class="ride-tip">${this.money(ride.getCurrentTip())}</span>
+        ${tipPenalty}
+      </div>
       ${arrivalWarning}
     `;
+  }
+
+  private passengerNameWithTrait(name: string, passengerType: PassengerType): string {
+    return passengerType === PassengerType.Normal ? name : `${name} (${passengerType})`;
   }
 
   private updateIndicator(target: Vector3 | null, player: PlayerCar): void {
@@ -1133,7 +1235,7 @@ export class GameUI {
     return panel;
   }
 
-  private setHtml(element: HTMLElement, cacheKey: "lastPhoneHtml" | "lastMapHtml" | "lastRideResultHtml", html: string): void {
+  private setHtml(element: HTMLElement, cacheKey: "lastPhoneHtml" | "lastRideResultHtml", html: string): void {
     if (this[cacheKey] === html) {
       return;
     }

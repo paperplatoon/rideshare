@@ -17,6 +17,9 @@ describe("PackageDeliveryManager", () => {
     expect(offer.tripDistance).toBeGreaterThanOrEqual(GAME_CONFIG.packageDelivery.minDropoffDistance);
     expect(offer.tripDistance).toBeLessThanOrEqual(GAME_CONFIG.packageDelivery.maxDropoffDistance);
     expect(offer.initialPayout).toBeCloseTo(offer.tripDistance * GAME_CONFIG.packageDelivery.ratePerMeter);
+    const roadsById = new Map(fixture.town.roads.map((road) => [road.id, road]));
+    expect(roadsById.get(offer.pickupPoint.roadId)?.allowsMissionStops).toBe(true);
+    expect(roadsById.get(offer.destinationPoint.roadId)?.allowsMissionStops).toBe(true);
     fixture.manager.update(30);
     expect(fixture.manager.offer.id).toBe(offer.id);
     fixture.dispose();
@@ -57,6 +60,8 @@ describe("PackageDeliveryManager", () => {
       offense: "SPEEDING",
       assessedFine: 40,
       amountPaid: 40,
+      resistingArrestFine: 0,
+      resistingArrestAmountPaid: 0,
       remainingBalance: fixture.profile.money,
     };
 
@@ -86,6 +91,7 @@ function createFixture() {
     scene,
     player,
     profile,
+    town,
     manager,
     dispose: () => {
       manager.dispose();

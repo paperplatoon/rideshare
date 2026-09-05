@@ -28,6 +28,7 @@ import { STARTER_VEHICLE, getVehicleDefinition } from "../vehicles/VehicleCatalo
 import type { VehicleStatKey } from "../vehicles/VehicleTypes";
 import { getMissionLicense, type MissionLicenseId } from "../missions/MissionLicenseCatalog";
 import { PoliceManager } from "../police/PoliceManager";
+import type { PolicePursuitTarget } from "../police/PoliceManager";
 import { PackageDeliveryManager } from "../delivery/PackageDeliveryManager";
 
 export class Game {
@@ -168,25 +169,24 @@ export class Game {
         this.player.update(fixedStep, this.input, this.worldQuery, this.fuel.hasFuel, this.damage.damagePercent);
         this.drivingBehavior.update(fixedStep, this.player, this.worldQuery);
         const collision = this.traffic.update(fixedStep, this.player);
-        let citation = collision.policeCollisionOfficerId === null
-          ? null
-          : this.police.registerPoliceCollision(
+        const policeTarget = this.policeTargetSnapshot();
+        if (collision.policeCollisionOfficerId !== null) {
+          this.police.registerPoliceCollision(
             collision.policeCollisionOfficerId,
+            policeTarget,
             collision.policeCollisionSeverity,
-            this.profile,
-          );
-        if (!citation) {
-          citation = this.police.update(
-            fixedStep,
-            this.player.root.position,
-            this.drivingBehavior.rates,
-            this.drivingBehavior.current,
-            this.profile,
           );
         }
+        const citation = this.police.update(
+          fixedStep,
+          policeTarget,
+          this.drivingBehavior.rates,
+          this.drivingBehavior.current,
+          this.profile,
+        );
         if (!citation && collision.collisionViolationSeverity > 0) {
           this.police.registerTrafficCollision(
-            this.player.root.position,
+            policeTarget,
             collision.collisionViolationSeverity,
           );
         }
@@ -261,8 +261,7 @@ export class Game {
     this.town = new TownGenerator(this.scene).generate();
     this.worldQuery = new WorldQuery(
       this.town.staticColliders,
-      this.town.roadPositionsX,
-      this.town.roadPositionsZ,
+      this.town.roads,
       GAME_CONFIG.world.roadWidth / 2,
       GAME_CONFIG.world.roadWidth / 2 + GAME_CONFIG.world.sidewalkWidth,
       GAME_CONFIG.world.spatialCellSize,
@@ -431,6 +430,18 @@ export class Game {
     this.ui.showCitation(citation);
   }
 
+  private policeTargetSnapshot(): PolicePursuitTarget {
+    const player = this.player!;
+    return {
+      x: player.root.position.x,
+      z: player.root.position.z,
+      heading: player.heading,
+      velocityX: player.getVelocityX(),
+      velocityZ: player.getVelocityZ(),
+      vehicleLength: player.vehicleLength,
+    };
+  }
+
   private acknowledgeCitation(): void {
     if (this.state !== GameState.Citation) return;
     this.state = GameState.Playing;
@@ -472,6 +483,10 @@ export class Game {
   private createScene(): Scene {
     const scene = new Scene(this.engine);
     scene.clearColor.set(0.55, 0.72, 0.86, 1);
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = GAME_CONFIG.graphics.fogStart;
+    scene.fogEnd = GAME_CONFIG.graphics.fogEnd;
+    scene.fogColor = new Color3(0.55, 0.72, 0.86);
     const light = new HemisphericLight("main-light", new Vector3(0.4, 1, 0.3), scene);
     light.intensity = 0.92;
     light.groundColor = new Color3(0.32, 0.34, 0.34);

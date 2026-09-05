@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
-import type { BoxCollider } from "../game/types";
+import type { BoxCollider, RoadDefinition, RoadTypeId } from "../game/types";
 import { WorldQuery } from "./WorldQuery";
 
 function createQuery(colliders: BoxCollider[] = [], legalDrivingAreas: BoxCollider[] = []): WorldQuery {
-  return new WorldQuery(colliders, [0, 120, 240], [0, 120, 240], 20, 22, 64, legalDrivingAreas);
+  return new WorldQuery(colliders, testRoads(), 20, 22, 64, legalDrivingAreas);
+}
+
+function testRoads(): RoadDefinition[] {
+  const roads: RoadDefinition[] = [];
+  for (const [axis, prefix] of [["northSouth", "ns"], ["eastWest", "ew"]] as const) {
+    for (let index = 0; index < 3; index++) {
+      const type: RoadTypeId = index === 2 ? "highway" : "city";
+      roads.push({
+        id: `${prefix}-${index}`,
+        axis,
+        index,
+        center: index * 120,
+        type,
+        speedLimitMph: type === "highway" ? 70 : 60,
+        allowsMissionStops: type !== "highway",
+      });
+    }
+  }
+  return roads;
 }
 
 describe("WorldQuery", () => {
@@ -37,11 +56,25 @@ describe("WorldQuery", () => {
     const turnApproach = query.getRoadContext(10, 30, 0, -10);
 
     expect(road.axis).toBe("northSouth");
+    expect(road.road.id).toBe("ns-0");
+    expect(road.road.speedLimitMph).toBe(60);
     expect(road.lateralOffset).toBe(10);
     expect(road.inIntersection).toBe(false);
     expect(road.inTurningGap).toBe(false);
     expect(turnApproach.inTurningGap).toBe(true);
     expect(query.isInLegalDrivingArea(30, 60)).toBe(true);
     expect(query.isInLegalDrivingArea(37, 60)).toBe(false);
+  });
+
+  it("returns metadata for the selected highway road", () => {
+    const road = createQuery().getRoadContext(230, 60, 0, -10);
+
+    expect(road.axis).toBe("northSouth");
+    expect(road.road).toMatchObject({
+      id: "ns-2",
+      type: "highway",
+      speedLimitMph: 70,
+      allowsMissionStops: false,
+    });
   });
 });

@@ -45,8 +45,20 @@ export interface BoxCollider {
 }
 
 export type RoadAxis = "northSouth" | "eastWest";
+export type RoadTypeId = "city" | "highway";
+
+export interface RoadDefinition {
+  id: string;
+  axis: RoadAxis;
+  index: number;
+  center: number;
+  type: RoadTypeId;
+  speedLimitMph: number;
+  allowsMissionStops: boolean;
+}
 
 export interface RoadContext {
+  road: RoadDefinition;
   axis: RoadAxis;
   roadCenter: number;
   lateralOffset: number;
@@ -86,6 +98,8 @@ export interface PoliceCitation {
   offense: PoliceOffense;
   assessedFine: number;
   amountPaid: number;
+  resistingArrestFine: number;
+  resistingArrestAmountPaid: number;
   remainingBalance: number;
   packageConfiscated?: boolean;
   possessionFine?: number;

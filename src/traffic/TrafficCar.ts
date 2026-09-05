@@ -1,19 +1,42 @@
-import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { GAME_CONFIG } from "../game/config";
 import type { TrafficVehicleRole, TrafficWaypoint } from "../game/types";
 import { clamp, lerp, normalizeAngle, randomBetween } from "../utils/math";
+import { createLowPolyVehicleMesh } from "../vehicles/VehicleMeshFactory";
 
 type Direction = "north" | "south" | "east" | "west";
 
-export interface TrafficPursuitTarget {
+export interface TrafficPosition {
   x: number;
   z: number;
 }
+
+export interface TrafficPursuitTarget extends TrafficPosition {
+  heading?: number;
+  velocityX?: number;
+  velocityZ?: number;
+  vehicleLength?: number;
+}
+
+interface ResolvedTrafficPursuitTarget extends TrafficPosition {
+  heading: number;
+  velocityX: number;
+  velocityZ: number;
+  vehicleLength: number;
+}
+
+export type TrafficAccidentState =
+  | "driving"
+  | "minorRecovery"
+  | "braking"
+  | "backing"
+  | "waiting"
+  | "pullingOver"
+  | "stopped"
+  | "pursuitRecovery";
 
 interface LeadVehicle {
   bumperGap: number;
@@ -83,7 +106,7 @@ export function createTrafficUTurnPath(
 export function choosePursuitDirection(
   waypoint: TrafficWaypoint,
   currentDirection: Direction,
-  target: TrafficPursuitTarget,
+  target: TrafficPosition,
   roadPositionsX: number[],
   roadPositionsZ: number[],
   allowReverse = true,
@@ -109,11 +132,11 @@ export function choosePursuitDirection(
 }
 
 export function shouldStartPursuitUTurn(
-  position: TrafficPursuitTarget,
+  position: TrafficPosition,
   previousWaypoint: TrafficWaypoint,
   nextWaypoint: TrafficWaypoint,
   direction: Direction,
-  target: TrafficPursuitTarget,
+  target: TrafficPosition,
   roadPositionsX: number[],
   roadPositionsZ: number[],
 ): boolean {
@@ -156,9 +179,21 @@ export class TrafficCar {
   private readonly turnTargets: TrafficWaypoint[] = [];
   private cruiseSpeed: number;
   private speedChangeTimeRemaining: number;
-  private pursuitTarget: TrafficPursuitTarget | null = null;
+  private pursuitTarget: ResolvedTrafficPursuitTarget | null = null;
   private pursuitUTurnRequested = false;
   private pursuitUTurnCooldown = 0;
+  private pursuitAvoidanceOffset = 0;
+  private pursuitAvoidanceTimeRemaining = 0;
+  private pursuitPathBlocked = false;
+  private accidentStateValue: TrafficAccidentState = "driving";
+  private accidentStateTimeRemaining = 0;
+  private accidentPartnerId: number | null = null;
+  private accidentReverseRemaining = 0;
+  private accidentPullOverTarget: Vector3 | null = null;
+  private readonly activeContactIds = new Set<number>();
+  private damagePercentValue = 0;
+  private safetyBrakeMode: "hard" | "light" | null = null;
+  private resumeAfterAccident = false;
 
   constructor(
     readonly id: number,
@@ -186,43 +221,102 @@ export class TrafficCar {
 
   update(deltaTime: number, nearbyTraffic: TrafficCar[]): void {
     this.pursuitUTurnCooldown = Math.max(0, this.pursuitUTurnCooldown - deltaTime);
+    this.pursuitAvoidanceTimeRemaining = Math.max(0, this.pursuitAvoidanceTimeRemaining - deltaTime);
+    this.accidentStateTimeRemaining = Math.max(0, this.accidentStateTimeRemaining - deltaTime);
     if (!this.pursuitTarget) this.updateCruiseSpeed(deltaTime);
+
+    if (this.accidentStateValue === "stopped") {
+      this.speed = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+      return;
+    }
+    if (this.accidentStateValue === "waiting") {
+      this.speed = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+      if (this.accidentStateTimeRemaining <= 0) {
+        this.accidentStateValue = "driving";
+        this.resumeAfterAccident = false;
+      } else {
+        return;
+      }
+    }
+    if (this.accidentStateValue === "backing") {
+      this.updateBacking(deltaTime);
+      return;
+    }
+    if (this.accidentStateValue === "pullingOver") {
+      this.updatePullingOver(deltaTime, nearbyTraffic);
+      return;
+    }
+    if (this.accidentStateValue === "minorRecovery" && this.accidentStateTimeRemaining <= 0) {
+      this.accidentStateValue = "driving";
+    }
+    if (this.accidentStateValue === "pursuitRecovery"
+      && this.accidentStateTimeRemaining <= 0
+      && !this.hasAccidentPartnerContact()) {
+      this.accidentStateValue = "driving";
+      this.accidentPartnerId = null;
+    }
 
     if (this.pursuitTarget && this.pursuitUTurnRequested && !this.completingTurn) {
       this.beginUTurn(this.direction, this.target);
     }
 
-    let dx = this.target.position.x - this.mesh.position.x;
-    let dz = this.target.position.z - this.mesh.position.z;
-    let distance = Math.hypot(dx, dz);
+    let routeDx = this.target.position.x - this.mesh.position.x;
+    let routeDz = this.target.position.z - this.mesh.position.z;
+    let routeDistance = Math.hypot(routeDx, routeDz);
     if (!this.completingTurn
       && this.plannedDirection !== this.direction
-      && distance <= GAME_CONFIG.traffic.turnCurveRadius) {
+      && routeDistance <= GAME_CONFIG.traffic.turnCurveRadius) {
       if (this.plannedDirection === oppositeDirection(this.direction)) {
         this.beginUTurn(this.direction, this.target);
       } else {
         this.beginTurn(this.direction, this.target);
       }
-      dx = this.target.position.x - this.mesh.position.x;
-      dz = this.target.position.z - this.mesh.position.z;
-      distance = Math.hypot(dx, dz);
+      routeDx = this.target.position.x - this.mesh.position.x;
+      routeDz = this.target.position.z - this.mesh.position.z;
+      routeDistance = Math.hypot(routeDx, routeDz);
     }
     let routeAdvances = 0;
-    while (distance < 0.05 && routeAdvances <= GAME_CONFIG.traffic.turnCurveSegments + 1) {
+    while (routeDistance < 0.05 && routeAdvances <= GAME_CONFIG.traffic.turnCurveSegments + 1) {
       this.advanceRoute();
-      dx = this.target.position.x - this.mesh.position.x;
-      dz = this.target.position.z - this.mesh.position.z;
-      distance = Math.hypot(dx, dz);
+      routeDx = this.target.position.x - this.mesh.position.x;
+      routeDz = this.target.position.z - this.mesh.position.z;
+      routeDistance = Math.hypot(routeDx, routeDz);
       routeAdvances += 1;
     }
-    if (distance < 0.05) return;
+    if (routeDistance < 0.05) return;
+
+    const driveTarget = this.chooseDriveTarget(nearbyTraffic);
+    const dx = driveTarget.x - this.mesh.position.x;
+    const dz = driveTarget.z - this.mesh.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.05) {
+      this.speed = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+      return;
+    }
 
     const dirX = dx / distance;
     const dirZ = dz / distance;
-    const desiredSpeed = this.desiredSpeed(distance, dirX, dirZ, nearbyTraffic);
+    let desiredSpeed = this.desiredSpeed(distance, dirX, dirZ, nearbyTraffic);
+    if (this.accidentStateValue === "braking" || this.accidentStateValue === "pursuitRecovery") {
+      desiredSpeed = 0;
+    }
+    const accelerationDamageMultiplier = this.damageMultiplier(
+      GAME_CONFIG.player.damageEffects.accelerationMultiplierAtMaxDamage,
+    );
+    const brakingDamageMultiplier = this.damageMultiplier(
+      GAME_CONFIG.player.damageEffects.brakingMultiplierAtMaxDamage,
+    );
     const speedChangeRate = desiredSpeed < this.speed
-      ? (this.pursuitTarget ? GAME_CONFIG.police.pursuitBraking : GAME_CONFIG.traffic.braking)
-      : (this.pursuitTarget ? GAME_CONFIG.police.pursuitAcceleration : GAME_CONFIG.traffic.acceleration);
+      ? (this.safetyBrakeMode === "light"
+        ? GAME_CONFIG.traffic.intentionalCrashBraking
+        : (this.pursuitTarget ? GAME_CONFIG.police.pursuitBraking : GAME_CONFIG.traffic.braking) * brakingDamageMultiplier)
+      : (this.pursuitTarget ? GAME_CONFIG.police.pursuitAcceleration : GAME_CONFIG.traffic.acceleration) * accelerationDamageMultiplier;
     const maximumSpeedChange = speedChangeRate * deltaTime;
     this.speed += clamp(desiredSpeed - this.speed, -maximumSpeedChange, maximumSpeedChange);
 
@@ -232,7 +326,21 @@ export class TrafficCar {
     this.mesh.position.x += dirX * step;
     this.mesh.position.z += dirZ * step;
     const desiredHeading = Math.atan2(dirX, dirZ);
-    this.mesh.rotation.y += normalizeAngle(desiredHeading - this.mesh.rotation.y) * Math.min(1, deltaTime * 6);
+    const turningDamageMultiplier = this.damageMultiplier(
+      GAME_CONFIG.player.damageEffects.steeringResponseMultiplierAtMaxDamage,
+    );
+    this.mesh.rotation.y += normalizeAngle(desiredHeading - this.mesh.rotation.y)
+      * Math.min(1, deltaTime * 6 * turningDamageMultiplier);
+
+    if (this.accidentStateValue === "braking" && this.speed <= GAME_CONFIG.traffic.accidentStopSpeed) {
+      this.speed = 0;
+      if (this.hasAccidentPartnerContact()) {
+        this.accidentStateValue = "backing";
+        this.accidentReverseRemaining = GAME_CONFIG.traffic.accidentReverseDistance;
+      } else {
+        this.finishAccidentBraking();
+      }
+    }
   }
 
   push(x: number, z: number): void {
@@ -260,10 +368,78 @@ export class TrafficCar {
     return this.pursuitTarget !== null;
   }
 
+  get accidentState(): TrafficAccidentState {
+    return this.accidentStateValue;
+  }
+
+  get damagePercent(): number {
+    return this.damagePercentValue;
+  }
+
+  get isInPlayerContact(): boolean {
+    return this.activeContactIds.has(-1);
+  }
+
+  beginCollisionFrame(): void {
+    this.activeContactIds.clear();
+  }
+
+  markCollisionContact(otherId: number): void {
+    this.activeContactIds.add(otherId);
+  }
+
+  registerCollision(
+    otherId: number,
+    damagePercent: number,
+    serious: boolean,
+    pullOverAfterSerious = true,
+  ): void {
+    this.damagePercentValue = clamp(this.damagePercentValue + Math.max(0, damagePercent), 0, 1);
+    this.speed *= GAME_CONFIG.player.collisionSpeedLoss;
+    this.accidentPartnerId = otherId;
+    if (this.pursuitTarget) {
+      this.accidentStateValue = "pursuitRecovery";
+      this.accidentStateTimeRemaining = GAME_CONFIG.police.pursuitRecoverySeconds;
+      return;
+    }
+    if (serious) {
+      this.resumeAfterAccident = !pullOverAfterSerious;
+      this.accidentStateValue = "braking";
+      return;
+    }
+    if (this.accidentStateValue === "driving" || this.accidentStateValue === "minorRecovery") {
+      this.accidentStateValue = "minorRecovery";
+      this.accidentStateTimeRemaining = GAME_CONFIG.traffic.minorCollisionRecoverySeconds;
+    }
+  }
+
+  setSafetyBrakeMode(mode: "hard" | "light" | null): void {
+    if (mode === null || mode === "hard" || this.safetyBrakeMode !== "hard") {
+      this.safetyBrakeMode = mode;
+    }
+  }
+
   setPursuitTarget(target: TrafficPursuitTarget): void {
     if (this.role !== "police") return;
     const wasPursuing = this.pursuitTarget !== null;
-    this.pursuitTarget = { x: target.x, z: target.z };
+    this.pursuitTarget = {
+      x: target.x,
+      z: target.z,
+      heading: target.heading ?? 0,
+      velocityX: target.velocityX ?? 0,
+      velocityZ: target.velocityZ ?? 0,
+      vehicleLength: target.vehicleLength ?? GAME_CONFIG.player.length,
+    };
+    if (this.accidentStateValue === "minorRecovery"
+      || this.accidentStateValue === "braking"
+      || this.accidentStateValue === "backing"
+      || this.accidentStateValue === "waiting"
+      || this.accidentStateValue === "pullingOver"
+      || this.accidentStateValue === "stopped") {
+      this.accidentStateValue = "pursuitRecovery";
+      this.accidentStateTimeRemaining = GAME_CONFIG.police.pursuitRecoverySeconds;
+      this.accidentPullOverTarget = null;
+    }
     if (!this.completingTurn) {
       if (!wasPursuing) this.retargetCurrentLane();
       const distanceToIntersection = Math.hypot(
@@ -292,6 +468,13 @@ export class TrafficCar {
     if (!this.pursuitTarget) return;
     this.pursuitTarget = null;
     this.pursuitUTurnRequested = false;
+    this.pursuitAvoidanceOffset = 0;
+    this.pursuitAvoidanceTimeRemaining = 0;
+    this.pursuitPathBlocked = false;
+    if (this.accidentStateValue === "pursuitRecovery") {
+      this.accidentStateValue = "minorRecovery";
+      this.accidentStateTimeRemaining = GAME_CONFIG.traffic.minorCollisionRecoverySeconds;
+    }
     if (!this.completingTurn) {
       this.retargetCurrentLane();
       this.plannedDirection = this.chooseDirectionAt(this.target);
@@ -307,6 +490,18 @@ export class TrafficCar {
     this.turnTargets.length = 0;
     this.pursuitUTurnRequested = false;
     this.pursuitUTurnCooldown = 0;
+    this.pursuitAvoidanceOffset = 0;
+    this.pursuitAvoidanceTimeRemaining = 0;
+    this.pursuitPathBlocked = false;
+    this.accidentStateValue = "driving";
+    this.accidentStateTimeRemaining = 0;
+    this.accidentPartnerId = null;
+    this.accidentReverseRemaining = 0;
+    this.accidentPullOverTarget = null;
+    this.activeContactIds.clear();
+    this.damagePercentValue = 0;
+    this.safetyBrakeMode = null;
+    this.resumeAfterAccident = false;
     this.plannedDirection = this.chooseDirectionAt(this.target);
     Vector3.LerpToRef(this.waypoint.position, this.target.position, progress, this.mesh.position);
     this.mesh.position.y = 1;
@@ -322,68 +517,37 @@ export class TrafficCar {
   static createPrototype(scene: import("@babylonjs/core/scene").Scene, material: StandardMaterial, index: number): Mesh {
     const width = GAME_CONFIG.traffic.vehicleWidth;
     const length = GAME_CONFIG.traffic.vehicleLength;
-    const body = MeshBuilder.CreateBox(`traffic-body-source-${index}`, { width, height: 1.5, depth: length }, scene);
-    body.material = material;
-    const cabin = MeshBuilder.CreateBox(`traffic-cabin-source-${index}`, {
-      width: width * 0.704,
-      height: 1.05,
-      depth: length * 0.351,
-    }, scene);
-    cabin.position.set(0, 1.05, -length * 0.037);
-    cabin.material = material;
-    const prototype = Mesh.MergeMeshes([body, cabin], true, true, undefined, false, false)!;
-    prototype.name = `traffic-source-${index}`;
+    const bodyColor = material.diffuseColor.clone();
+    material.diffuseColor = Color3.White();
+    const prototype = createLowPolyVehicleMesh(scene, `traffic-source-${index}`, material, {
+      bodyColor,
+      bodyLength: length,
+      bodyWidth: width,
+      bodyHeight: 1.5,
+      cabinLength: length * 0.4,
+      cabinWidth: width * 0.72,
+      cabinHeight: 1.05,
+    });
     prototype.position.y = -10000;
-    prototype.isPickable = false;
     return prototype;
   }
 
   static createPolicePrototype(scene: import("@babylonjs/core/scene").Scene, material: StandardMaterial): Mesh {
     const width = GAME_CONFIG.traffic.vehicleWidth;
     const length = GAME_CONFIG.traffic.vehicleLength;
-    const body = MeshBuilder.CreateBox("police-body-source", { width, height: 1.5, depth: length }, scene);
-    const cabin = MeshBuilder.CreateBox("police-cabin-source", {
-      width: width * 0.704,
-      height: 1.05,
-      depth: length * 0.351,
-    }, scene);
-    cabin.position.set(0, 1.05, -length * 0.037);
-    const leftLight = MeshBuilder.CreateBox("police-light-red-source", { width: 1.25, height: 0.34, depth: 0.72 }, scene);
-    leftLight.position.set(-0.68, 1.72, -0.35);
-    const rightLight = MeshBuilder.CreateBox("police-light-blue-source", { width: 1.25, height: 0.34, depth: 0.72 }, scene);
-    rightLight.position.set(0.68, 1.72, -0.35);
-    const bumper = MeshBuilder.CreateBox("police-bumper-source", { width: width + 0.1, height: 0.38, depth: 0.42 }, scene);
-    bumper.position.set(0, -0.25, -length / 2 + 0.02);
-
-    TrafficCar.applyVertexColor(body, new Color4(0.035, 0.055, 0.075, 1));
-    TrafficCar.applyVertexColor(cabin, new Color4(0.88, 0.91, 0.92, 1));
-    TrafficCar.applyVertexColor(leftLight, new Color4(0.95, 0.08, 0.08, 1));
-    TrafficCar.applyVertexColor(rightLight, new Color4(0.08, 0.3, 1, 1));
-    TrafficCar.applyVertexColor(bumper, new Color4(0.88, 0.91, 0.92, 1));
-    for (const part of [body, cabin, leftLight, rightLight, bumper]) part.material = material;
-
-    const prototype = Mesh.MergeMeshes(
-      [body, cabin, leftLight, rightLight, bumper],
-      true,
-      true,
-      undefined,
-      false,
-      false,
-    )!;
-    prototype.name = "police-source";
+    material.diffuseColor = Color3.White();
+    const prototype = createLowPolyVehicleMesh(scene, "police-source", material, {
+      bodyColor: new Color3(0.035, 0.055, 0.075),
+      bodyLength: length,
+      bodyWidth: width,
+      bodyHeight: 1.5,
+      cabinLength: length * 0.4,
+      cabinWidth: width * 0.72,
+      cabinHeight: 1.05,
+      police: true,
+    });
     prototype.position.y = -10000;
-    prototype.isPickable = false;
-    prototype.useVertexColors = true;
     return prototype;
-  }
-
-  private static applyVertexColor(mesh: Mesh, color: Color4): void {
-    const colors: number[] = [];
-    for (let index = 0; index < mesh.getTotalVertices(); index++) {
-      colors.push(color.r, color.g, color.b, color.a);
-    }
-    mesh.setVerticesData(VertexBuffer.ColorKind, colors);
-    mesh.useVertexColors = true;
   }
 
   private updateCruiseSpeed(deltaTime: number): void {
@@ -403,10 +567,11 @@ export class TrafficCar {
 
   private chooseDirectionAt(waypoint: TrafficWaypoint): Direction {
     if (this.pursuitTarget) {
+      const predictedTarget = this.predictedPursuitTarget();
       return choosePursuitDirection(
         waypoint,
         this.direction,
-        this.pursuitTarget,
+        predictedTarget,
         this.roadPositionsX,
         this.roadPositionsZ,
         this.pursuitUTurnCooldown <= 0,
@@ -573,9 +738,285 @@ export class TrafficCar {
     this.mesh.rotation.y = Math.atan2(dx, dz);
   }
 
+  private predictedPursuitTarget(): ResolvedTrafficPursuitTarget {
+    const target = this.pursuitTarget!;
+    const seconds = GAME_CONFIG.police.pursuitPredictionSeconds;
+    return {
+      ...target,
+      x: target.x + target.velocityX * seconds,
+      z: target.z + target.velocityZ * seconds,
+    };
+  }
+
+  private chooseDriveTarget(traffic: TrafficCar[]): { x: number; z: number } {
+    if (!this.pursuitTarget || this.completingTurn) {
+      this.pursuitPathBlocked = false;
+      return this.target.position;
+    }
+
+    const target = this.predictedPursuitTarget();
+    const centerDistance = Math.hypot(target.x - this.mesh.position.x, target.z - this.mesh.position.z);
+    let baseX = this.target.position.x;
+    let baseZ = this.target.position.z;
+    if (centerDistance <= GAME_CONFIG.police.pursuitDirectSteeringDistance) {
+      let pursuitX = target.x;
+      let pursuitZ = target.z;
+      if (centerDistance <= GAME_CONFIG.police.pursuitTrailingTargetDistance) {
+        const followingDistance = target.vehicleLength / 2
+          + GAME_CONFIG.traffic.vehicleLength / 2
+          + GAME_CONFIG.police.pursuitDesiredGapMeters / GAME_CONFIG.ride.metersPerWorldUnit;
+        pursuitX -= Math.sin(target.heading) * followingDistance;
+        pursuitZ -= Math.cos(target.heading) * followingDistance;
+      }
+      if (this.sharedRoadCorridor(pursuitX, pursuitZ)) {
+        baseX = pursuitX;
+        baseZ = pursuitZ;
+      }
+    }
+
+    const corridor = this.sharedRoadCorridor(baseX, baseZ);
+    if (!corridor) {
+      this.pursuitPathBlocked = false;
+      return { x: baseX, z: baseZ };
+    }
+    const dx = baseX - this.mesh.position.x;
+    const dz = baseZ - this.mesh.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.1) return { x: baseX, z: baseZ };
+    const forwardX = dx / distance;
+    const forwardZ = dz / distance;
+    const steeringDistance = Math.min(distance, GAME_CONFIG.police.pursuitAvoidanceLookAheadDistance);
+    const steeringBaseX = this.mesh.position.x + forwardX * steeringDistance;
+    const steeringBaseZ = this.mesh.position.z + forwardZ * steeringDistance;
+    const rightX = forwardZ;
+    const rightZ = -forwardX;
+    const candidateOffsets = this.pursuitAvoidanceTimeRemaining > 0
+      ? [this.pursuitAvoidanceOffset]
+      : [0, -GAME_CONFIG.police.pursuitAvoidanceOffset, GAME_CONFIG.police.pursuitAvoidanceOffset];
+    let bestOffset = candidateOffsets[0];
+    let bestClearance = -1;
+    for (const offset of candidateOffsets) {
+      const candidate = this.clampToRoadCorridor(
+        steeringBaseX + rightX * offset,
+        steeringBaseZ + rightZ * offset,
+        corridor,
+      );
+      const clearance = this.pathClearance(candidate.x, candidate.z, traffic);
+      if (clearance > bestClearance) {
+        bestClearance = clearance;
+        bestOffset = offset;
+      }
+      if (offset === 0 && clearance >= GAME_CONFIG.police.pursuitAvoidanceClearance) break;
+    }
+    if (this.pursuitAvoidanceTimeRemaining <= 0 && bestOffset !== 0) {
+      this.pursuitAvoidanceOffset = bestOffset;
+      this.pursuitAvoidanceTimeRemaining = GAME_CONFIG.police.pursuitAvoidanceCommitSeconds;
+    }
+    if (this.pursuitAvoidanceTimeRemaining <= 0 && bestOffset === 0) {
+      this.pursuitAvoidanceOffset = 0;
+    }
+    this.pursuitPathBlocked = bestClearance < GAME_CONFIG.police.pursuitAvoidanceClearance;
+    return this.clampToRoadCorridor(
+      steeringBaseX + rightX * bestOffset,
+      steeringBaseZ + rightZ * bestOffset,
+      corridor,
+    );
+  }
+
+  private sharedRoadCorridor(targetX: number, targetZ: number): { axis: "x" | "z"; center: number } | null {
+    const roadHalfWidth = GAME_CONFIG.world.roadWidth / 2;
+    const roadsideAllowance = GAME_CONFIG.world.sidewalkWidth + GAME_CONFIG.player.width / 2;
+    const nearestX = nearestValue(this.roadPositionsX, this.mesh.position.x);
+    const targetNearestX = nearestValue(this.roadPositionsX, targetX);
+    const nearestZ = nearestValue(this.roadPositionsZ, this.mesh.position.z);
+    const targetNearestZ = nearestValue(this.roadPositionsZ, targetZ);
+    const sharesVertical = nearestX === targetNearestX
+      && Math.abs(this.mesh.position.x - nearestX) <= roadHalfWidth
+      && Math.abs(targetX - nearestX) <= roadHalfWidth + roadsideAllowance;
+    const sharesHorizontal = nearestZ === targetNearestZ
+      && Math.abs(this.mesh.position.z - nearestZ) <= roadHalfWidth
+      && Math.abs(targetZ - nearestZ) <= roadHalfWidth + roadsideAllowance;
+    if (sharesVertical && sharesHorizontal && this.pursuitTarget) {
+      return Math.abs(Math.sin(this.pursuitTarget.heading)) >= Math.abs(Math.cos(this.pursuitTarget.heading))
+        ? { axis: "z", center: nearestZ }
+        : { axis: "x", center: nearestX };
+    }
+    if (sharesHorizontal) return { axis: "z", center: nearestZ };
+    if (sharesVertical) return { axis: "x", center: nearestX };
+    return null;
+  }
+
+  private clampToRoadCorridor(
+    x: number,
+    z: number,
+    corridor: { axis: "x" | "z"; center: number },
+  ): { x: number; z: number } {
+    const inset = GAME_CONFIG.world.roadWidth / 2
+      - GAME_CONFIG.traffic.vehicleWidth / 2
+      - GAME_CONFIG.traffic.accidentCurbClearance;
+    if (corridor.axis === "x") {
+      return { x: clamp(x, corridor.center - inset, corridor.center + inset), z };
+    }
+    return { x, z: clamp(z, corridor.center - inset, corridor.center + inset) };
+  }
+
+  private pathClearance(targetX: number, targetZ: number, traffic: TrafficCar[]): number {
+    let minimum = Number.POSITIVE_INFINITY;
+    const prediction = GAME_CONFIG.police.pursuitAvoidancePredictionSeconds;
+    if (this.pursuitTarget) {
+      minimum = pointSegmentDistance(
+        this.pursuitTarget.x + this.pursuitTarget.velocityX * prediction,
+        this.pursuitTarget.z + this.pursuitTarget.velocityZ * prediction,
+        this.mesh.position.x,
+        this.mesh.position.z,
+        targetX,
+        targetZ,
+      );
+    }
+    for (const other of traffic) {
+      if (other === this) continue;
+      const predictedX = other.mesh.position.x + other.velocityX * prediction;
+      const predictedZ = other.mesh.position.z + other.velocityZ * prediction;
+      minimum = Math.min(minimum, pointSegmentDistance(
+        predictedX,
+        predictedZ,
+        this.mesh.position.x,
+        this.mesh.position.z,
+        targetX,
+        targetZ,
+      ));
+    }
+    return minimum;
+  }
+
+  private updateBacking(deltaTime: number): void {
+    if (!this.hasAccidentPartnerContact() || this.accidentReverseRemaining <= 0) {
+      this.finishAccidentBraking();
+      return;
+    }
+    const step = Math.min(
+      this.accidentReverseRemaining,
+      GAME_CONFIG.traffic.accidentReverseSpeed * deltaTime,
+    );
+    const forwardX = Math.sin(this.mesh.rotation.y);
+    const forwardZ = Math.cos(this.mesh.rotation.y);
+    this.mesh.position.x -= forwardX * step;
+    this.mesh.position.z -= forwardZ * step;
+    this.velocityX = deltaTime > 0 ? -forwardX * step / deltaTime : 0;
+    this.velocityZ = deltaTime > 0 ? -forwardZ * step / deltaTime : 0;
+    this.accidentReverseRemaining -= step;
+  }
+
+  private finishAccidentBraking(): void {
+    if (this.resumeAfterAccident) {
+      this.accidentStateValue = "waiting";
+      this.accidentStateTimeRemaining = GAME_CONFIG.traffic.npcCollisionWaitSeconds;
+      this.accidentPartnerId = null;
+      this.speed = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+      return;
+    }
+    this.beginPullingOver();
+  }
+
+  private beginPullingOver(): void {
+    const forward = directionVector(this.direction);
+    const roadHalfWidth = GAME_CONFIG.world.roadWidth / 2;
+    const curbInset = GAME_CONFIG.traffic.vehicleWidth / 2 + GAME_CONFIG.traffic.accidentCurbClearance;
+    const lateral = roadHalfWidth - curbInset;
+    let x = this.mesh.position.x + forward.x * GAME_CONFIG.traffic.accidentPullOverForwardDistance;
+    let z = this.mesh.position.z + forward.z * GAME_CONFIG.traffic.accidentPullOverForwardDistance;
+    if (this.direction === "north") x = nearestValue(this.roadPositionsX, this.mesh.position.x) - lateral;
+    if (this.direction === "south") x = nearestValue(this.roadPositionsX, this.mesh.position.x) + lateral;
+    if (this.direction === "east") z = nearestValue(this.roadPositionsZ, this.mesh.position.z) - lateral;
+    if (this.direction === "west") z = nearestValue(this.roadPositionsZ, this.mesh.position.z) + lateral;
+    this.accidentPullOverTarget = new Vector3(x, 1, z);
+    this.accidentStateValue = "pullingOver";
+    this.accidentPartnerId = null;
+  }
+
+  private updatePullingOver(deltaTime: number, traffic: TrafficCar[]): void {
+    const target = this.accidentPullOverTarget;
+    if (!target) {
+      this.accidentStateValue = "stopped";
+      return;
+    }
+    const dx = target.x - this.mesh.position.x;
+    const dz = target.z - this.mesh.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= 0.5) {
+      this.mesh.position.x = target.x;
+      this.mesh.position.z = target.z;
+      this.speed = 0;
+      this.velocityX = 0;
+      this.velocityZ = 0;
+      this.accidentStateValue = "stopped";
+      return;
+    }
+    const dirX = dx / distance;
+    const dirZ = dz / distance;
+    const leader = this.findLeadVehicle(dirX, dirZ, traffic);
+    const desiredSpeed = leader && leader.bumperGap < GAME_CONFIG.traffic.minimumFollowingGap
+      ? 0
+      : GAME_CONFIG.traffic.accidentPullOverSpeed;
+    this.speed += clamp(
+      desiredSpeed - this.speed,
+      -GAME_CONFIG.traffic.braking * deltaTime,
+      GAME_CONFIG.traffic.acceleration * deltaTime,
+    );
+    const step = Math.min(distance, this.speed * deltaTime);
+    this.mesh.position.x += dirX * step;
+    this.mesh.position.z += dirZ * step;
+    this.velocityX = deltaTime > 0 ? dirX * step / deltaTime : 0;
+    this.velocityZ = deltaTime > 0 ? dirZ * step / deltaTime : 0;
+    const desiredHeading = Math.atan2(dirX, dirZ);
+    this.mesh.rotation.y += normalizeAngle(desiredHeading - this.mesh.rotation.y) * Math.min(1, deltaTime * 4);
+  }
+
+  private hasAccidentPartnerContact(): boolean {
+    return this.accidentPartnerId !== null && this.activeContactIds.has(this.accidentPartnerId);
+  }
+
+  private damageMultiplier(multiplierAtMaxDamage: number): number {
+    return lerp(1, multiplierAtMaxDamage, this.damagePercentValue);
+  }
+
   private desiredSpeed(distanceToTarget: number, forwardX: number, forwardZ: number, traffic: TrafficCar[]): number {
-    const cruisingSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitSpeed : this.cruiseSpeed;
-    const turnSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitTurnSpeed : GAME_CONFIG.traffic.turnSpeed;
+    let cruisingSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitSpeed : this.cruiseSpeed;
+    let turnSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitTurnSpeed : GAME_CONFIG.traffic.turnSpeed;
+    if (this.pursuitTarget) {
+      const speedMultiplier = this.damageMultiplier(
+        GAME_CONFIG.player.damageEffects.topSpeedMultiplierAtMaxDamage,
+      );
+      const turnMultiplier = this.damageMultiplier(
+        GAME_CONFIG.player.damageEffects.yawRateMultiplierAtMaxDamage,
+      );
+      const playerSpeed = Math.hypot(this.pursuitTarget.velocityX, this.pursuitTarget.velocityZ);
+      cruisingSpeed = Math.max(
+        cruisingSpeed,
+        playerSpeed + GAME_CONFIG.police.pursuitMaximumClosingSpeed,
+      ) * speedMultiplier;
+      turnSpeed *= turnMultiplier;
+      const centerDistance = Math.hypot(
+        this.pursuitTarget.x - this.mesh.position.x,
+        this.pursuitTarget.z - this.mesh.position.z,
+      );
+      const desiredCenterDistance = this.pursuitTarget.vehicleLength / 2
+        + GAME_CONFIG.traffic.vehicleLength / 2
+        + GAME_CONFIG.police.pursuitDesiredGapMeters / GAME_CONFIG.ride.metersPerWorldUnit;
+      let gapError = centerDistance - desiredCenterDistance;
+      if (Math.abs(gapError) <= GAME_CONFIG.police.pursuitHoldDeadZone) gapError = 0;
+      if (centerDistance <= GAME_CONFIG.police.pursuitDirectSteeringDistance) {
+        const speedCorrection = clamp(
+          gapError * GAME_CONFIG.police.pursuitGapSpeedCorrection,
+          -playerSpeed,
+          GAME_CONFIG.police.pursuitMaximumClosingSpeed,
+        );
+        cruisingSpeed = Math.min(cruisingSpeed, playerSpeed + speedCorrection);
+      }
+      if (this.pursuitPathBlocked) cruisingSpeed = 0;
+    }
     let targetSpeed = cruisingSpeed;
     const approachingTurn = !this.completingTurn && this.plannedDirection !== this.direction;
     if (this.completingTurn) {
@@ -586,6 +1027,12 @@ export class TrafficCar {
         targetSpeed,
         lerp(cruisingSpeed, turnSpeed, clamp(turnAmount, 0, 1)),
       );
+    }
+
+    if (this.safetyBrakeMode === "hard") {
+      targetSpeed = 0;
+    } else if (this.safetyBrakeMode === "light") {
+      targetSpeed = Math.min(targetSpeed, Math.max(0, this.speed - 5));
     }
 
     const leader = this.findLeadVehicle(forwardX, forwardZ, traffic);
@@ -665,6 +1112,35 @@ function directionVector(direction: Direction): { x: number; z: number } {
   if (direction === "south") return { x: 0, z: 1 };
   if (direction === "west") return { x: -1, z: 0 };
   return { x: 1, z: 0 };
+}
+
+function nearestValue(values: number[], target: number): number {
+  let nearest = values[0];
+  let nearestDistance = Math.abs(target - nearest);
+  for (let index = 1; index < values.length; index++) {
+    const distance = Math.abs(target - values[index]);
+    if (distance < nearestDistance) {
+      nearest = values[index];
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+function pointSegmentDistance(
+  pointX: number,
+  pointZ: number,
+  startX: number,
+  startZ: number,
+  endX: number,
+  endZ: number,
+): number {
+  const dx = endX - startX;
+  const dz = endZ - startZ;
+  const lengthSquared = dx * dx + dz * dz;
+  if (lengthSquared <= 1e-6) return Math.hypot(pointX - startX, pointZ - startZ);
+  const t = clamp(((pointX - startX) * dx + (pointZ - startZ) * dz) / lengthSquared, 0, 1);
+  return Math.hypot(pointX - (startX + dx * t), pointZ - (startZ + dz * t));
 }
 
 export type { Direction };

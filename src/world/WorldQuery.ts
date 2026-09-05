@@ -1,5 +1,5 @@
 import { GAME_CONFIG } from "../game/config";
-import type { BoxCollider, RoadContext } from "../game/types";
+import type { BoxCollider, RoadContext, RoadDefinition } from "../game/types";
 
 export class WorldQuery {
   lastCollisionCandidateCount = 0;
@@ -9,18 +9,25 @@ export class WorldQuery {
   private maxIndexedHalfZ = 0;
   private readonly roadSpacingX: number;
   private readonly roadSpacingZ: number;
+  private readonly northSouthRoads: readonly RoadDefinition[];
+  private readonly eastWestRoads: readonly RoadDefinition[];
+  private readonly roadPositionsX: readonly number[];
+  private readonly roadPositionsZ: readonly number[];
 
   constructor(
     colliders: BoxCollider[],
-    private readonly roadPositionsX: number[],
-    private readonly roadPositionsZ: number[],
+    roads: readonly RoadDefinition[],
     private readonly roadHalfWidth: number,
     private readonly sidewalkOuterHalfWidth: number,
     private readonly cellSize: number,
     private readonly legalDrivingAreas: BoxCollider[] = [],
   ) {
-    this.roadSpacingX = roadPositionsX.length > 1 ? roadPositionsX[1] - roadPositionsX[0] : 1;
-    this.roadSpacingZ = roadPositionsZ.length > 1 ? roadPositionsZ[1] - roadPositionsZ[0] : 1;
+    this.northSouthRoads = roads.filter((road) => road.axis === "northSouth").sort((a, b) => a.index - b.index);
+    this.eastWestRoads = roads.filter((road) => road.axis === "eastWest").sort((a, b) => a.index - b.index);
+    this.roadPositionsX = this.northSouthRoads.map((road) => road.center);
+    this.roadPositionsZ = this.eastWestRoads.map((road) => road.center);
+    this.roadSpacingX = this.roadPositionsX.length > 1 ? this.roadPositionsX[1] - this.roadPositionsX[0] : 1;
+    this.roadSpacingZ = this.roadPositionsZ.length > 1 ? this.roadPositionsZ[1] - this.roadPositionsZ[0] : 1;
     for (const collider of colliders) this.addCollider(collider);
   }
 
@@ -91,7 +98,11 @@ export class WorldQuery {
     }
 
     const distanceToIntersection = axis === "northSouth" ? nearestZDistance : nearestXDistance;
+    const road = axis === "northSouth"
+      ? this.northSouthRoads[nearestXIndex]
+      : this.eastWestRoads[nearestZIndex];
     return {
+      road,
       axis,
       roadCenter: axis === "northSouth" ? nearestXPosition : nearestZPosition,
       lateralOffset: axis === "northSouth" ? x - nearestXPosition : z - nearestZPosition,
@@ -124,13 +135,13 @@ export class WorldQuery {
     bucket.push(collider);
   }
 
-  private nearestRoadDistance(value: number, positions: number[], spacing: number): number {
+  private nearestRoadDistance(value: number, positions: readonly number[], spacing: number): number {
     if (positions.length === 0) return Number.POSITIVE_INFINITY;
     const index = this.nearestRoadIndex(value, positions, spacing);
     return Math.abs(value - positions[index]);
   }
 
-  private nearestRoadIndex(value: number, positions: number[], spacing: number): number {
+  private nearestRoadIndex(value: number, positions: readonly number[], spacing: number): number {
     if (positions.length === 0) return 0;
     return Math.max(0, Math.min(positions.length - 1, Math.round((value - positions[0]) / spacing)));
   }

@@ -27,11 +27,26 @@ export interface PoliceWarningState {
   progress: number;
   activelyObserving: boolean;
   phase: "idle" | "observing" | "pursuit" | "busting";
+  hudMode: "idle" | "observing" | "resisting" | "arresting" | "fleeing" | "escaping";
+  hudProgress: number;
+  escapeProgress: number;
+  potentialFine: number;
+  observedOffense: PoliceOffense | null;
+  pursuitElapsedSeconds: number;
+  resistingArrestFine: number;
+  resistingCountdownSeconds: number;
 }
 
 export interface PoliceViewTarget {
   x: number;
   z: number;
+}
+
+export interface PolicePursuitTarget extends PoliceViewTarget {
+  heading?: number;
+  velocityX?: number;
+  velocityZ?: number;
+  vehicleLength?: number;
 }
 
 interface ActivePursuit {
@@ -40,10 +55,23 @@ interface ActivePursuit {
   peakSeverity: number;
   bustSeconds: number;
   escapeSeconds: number;
+  elapsedSeconds: number;
 }
 
 export class PoliceManager {
-  readonly warning: PoliceWarningState = { progress: 0, activelyObserving: false, phase: "idle" };
+  readonly warning: PoliceWarningState = {
+    progress: 0,
+    activelyObserving: false,
+    phase: "idle",
+    hudMode: "idle",
+    hudProgress: 0,
+    escapeProgress: 0,
+    potentialFine: 0,
+    observedOffense: null,
+    pursuitElapsedSeconds: 0,
+    resistingArrestFine: 0,
+    resistingCountdownSeconds: GAME_CONFIG.police.resistingGraceSeconds,
+  };
   private readonly observations = new Map<number, ObservationState>();
   private activePursuit: ActivePursuit | null = null;
   private updateAccumulator = 0;
@@ -66,7 +94,7 @@ export class PoliceManager {
 
   update(
     deltaTime: number,
-    player: PoliceViewTarget,
+    player: PolicePursuitTarget,
     rates: DrivingViolationRates,
     severity: DrivingViolationSeverity,
     profile: PlayerProfile,
@@ -84,6 +112,11 @@ export class PoliceManager {
     this.warning.progress = 0;
     this.warning.activelyObserving = false;
     this.warning.phase = "idle";
+    this.warning.hudMode = "idle";
+    this.warning.hudProgress = 0;
+    this.warning.escapeProgress = 0;
+    this.warning.potentialFine = 0;
+    this.warning.observedOffense = null;
     for (const officer of this.officers) {
       const state = this.stateFor(officer);
       const inView = officer.mesh.isEnabled() && isPlayerInPoliceView(
@@ -92,6 +125,7 @@ export class PoliceManager {
         player,
       );
       const activelyObserving = this.citationCooldown <= 0 && inView && rates.total > 0;
+      const observedOffense = offenseForRates(rates, state);
       if (activelyObserving) {
         state.meter += rates.total * updateDelta;
         state.speeding += rates.speeding * updateDelta;
@@ -105,11 +139,16 @@ export class PoliceManager {
       const progress = state.meter / GAME_CONFIG.police.citationThreshold;
       if (progress > this.warning.progress) {
         this.warning.progress = Math.min(1, progress);
+        this.warning.hudProgress = this.warning.progress;
         this.warning.activelyObserving = activelyObserving;
         this.warning.phase = activelyObserving || progress > 0 ? "observing" : "idle";
+        this.warning.hudMode = this.warning.phase;
+        this.warning.observedOffense = activelyObserving ? observedOffense : null;
       } else if (activelyObserving && progress === this.warning.progress) {
         this.warning.activelyObserving = true;
         this.warning.phase = "observing";
+        this.warning.hudMode = "observing";
+        this.warning.observedOffense = observedOffense;
       }
 
       if (activelyObserving && state.meter >= GAME_CONFIG.police.citationThreshold) {
@@ -121,7 +160,7 @@ export class PoliceManager {
   }
 
   registerTrafficCollision(
-    player: PoliceViewTarget,
+    player: PolicePursuitTarget,
     severity: number,
   ): boolean {
     if (this.activePursuit || this.citationCooldown > 0 || severity <= 0) return false;
@@ -139,8 +178,11 @@ export class PoliceManager {
       state.collision += points;
       state.peakSeverity = Math.max(state.peakSeverity, Math.max(0, Math.min(1, severity)));
       this.warning.progress = Math.min(1, state.meter / GAME_CONFIG.police.citationThreshold);
+      this.warning.hudProgress = this.warning.progress;
       this.warning.activelyObserving = true;
       this.warning.phase = "observing";
+      this.warning.hudMode = "observing";
+      this.warning.observedOffense = "RECKLESS DRIVING";
       if (state.meter >= GAME_CONFIG.police.citationThreshold) {
         this.startPursuit(officer, state, player);
         return true;
@@ -151,17 +193,18 @@ export class PoliceManager {
 
   registerPoliceCollision(
     officerId: number,
+    player: PolicePursuitTarget,
     severity: number,
-    profile: PlayerProfile,
-  ): PoliceCitation | null {
-    if (this.citationCooldown > 0) return null;
+  ): boolean {
+    if (this.activePursuit || this.citationCooldown > 0) return false;
     const officer = this.officers.find((candidate) => candidate.id === officerId);
-    if (!officer) return null;
+    if (!officer) return false;
     const state = this.stateFor(officer);
     state.meter = Math.max(state.meter, GAME_CONFIG.police.citationThreshold);
     state.collision = Math.max(state.collision, GAME_CONFIG.police.citationThreshold);
     state.peakSeverity = Math.max(state.peakSeverity, Math.max(0, Math.min(1, severity)));
-    return this.issueCitation(officer, state, profile, "COLLISION WITH POLICE");
+    this.startPursuit(officer, state, player, "COLLISION WITH POLICE");
+    return true;
   }
 
   get isDebugVisionEnabled(): boolean {
@@ -213,13 +256,19 @@ export class PoliceManager {
     state.peakSeverity *= retained;
   }
 
-  private startPursuit(officer: TrafficCar, state: ObservationState, player: PoliceViewTarget): void {
+  private startPursuit(
+    officer: TrafficCar,
+    state: ObservationState,
+    player: PolicePursuitTarget,
+    offense: PoliceOffense = dominantOffense(state),
+  ): void {
     this.activePursuit = {
       officerId: officer.id,
-      offense: dominantOffense(state),
+      offense,
       peakSeverity: state.peakSeverity,
       bustSeconds: 0,
       escapeSeconds: 0,
+      elapsedSeconds: 0,
     };
     for (const [officerId, observation] of this.observations) {
       if (officerId !== officer.id) resetObservation(observation);
@@ -228,11 +277,19 @@ export class PoliceManager {
     this.warning.progress = 0;
     this.warning.activelyObserving = false;
     this.warning.phase = "pursuit";
+    this.warning.hudMode = "resisting";
+    this.warning.hudProgress = 1;
+    this.warning.escapeProgress = 0;
+    this.warning.potentialFine = calculatePoliceFine(state.peakSeverity);
+    this.warning.observedOffense = offense;
+    this.warning.pursuitElapsedSeconds = 0;
+    this.warning.resistingArrestFine = 0;
+    this.warning.resistingCountdownSeconds = GAME_CONFIG.police.resistingGraceSeconds;
   }
 
   private updatePursuit(
     deltaTime: number,
-    player: PoliceViewTarget,
+    player: PolicePursuitTarget,
     profile: PlayerProfile,
   ): PoliceCitation | null {
     const pursuit = this.activePursuit;
@@ -244,11 +301,24 @@ export class PoliceManager {
     }
 
     officer.setPursuitTarget(player);
+    pursuit.elapsedSeconds += deltaTime;
+    const resistingFine = calculateResistingArrestFine(pursuit.elapsedSeconds);
+    this.warning.pursuitElapsedSeconds = pursuit.elapsedSeconds;
+    this.warning.resistingArrestFine = resistingFine;
+    this.warning.resistingCountdownSeconds = secondsUntilResistingChange(pursuit.elapsedSeconds);
+    this.warning.potentialFine = calculatePoliceFine(pursuit.peakSeverity) + resistingFine;
     const distanceMeters = Math.hypot(
       officer.mesh.position.x - player.x,
       officer.mesh.position.z - player.z,
     ) * GAME_CONFIG.ride.metersPerWorldUnit;
-    if (distanceMeters <= GAME_CONFIG.police.bustRadiusMeters) {
+    const captureDistanceMeters = (
+      GAME_CONFIG.traffic.vehicleLength / 2
+      + (player.vehicleLength ?? GAME_CONFIG.player.length) / 2
+    ) * GAME_CONFIG.ride.metersPerWorldUnit
+      + GAME_CONFIG.police.pursuitCaptureGapMeters;
+    if (distanceMeters <= captureDistanceMeters
+      && !officer.isInPlayerContact
+      && officer.accidentState !== "pursuitRecovery") {
       pursuit.bustSeconds += deltaTime;
       pursuit.escapeSeconds = 0;
       this.warning.phase = "busting";
@@ -265,11 +335,36 @@ export class PoliceManager {
       this.warning.activelyObserving = false;
     }
     this.warning.progress = Math.min(1, pursuit.bustSeconds / GAME_CONFIG.police.bustDurationSeconds);
+    this.warning.escapeProgress = Math.min(
+      1,
+      pursuit.escapeSeconds / GAME_CONFIG.police.escapeDurationSeconds,
+    );
+    const escapeDistanceRatio = distanceMeters / GAME_CONFIG.police.escapeDistanceMeters;
+    if (distanceMeters <= captureDistanceMeters
+      || (pursuit.bustSeconds > 0 && escapeDistanceRatio <= 0.5)) {
+      this.warning.hudMode = "arresting";
+      this.warning.hudProgress = this.warning.progress;
+    } else if (escapeDistanceRatio >= 1) {
+      this.warning.hudMode = "escaping";
+      this.warning.hudProgress = 1;
+    } else if (escapeDistanceRatio > 0.5) {
+      this.warning.hudMode = "fleeing";
+      this.warning.hudProgress = Math.min(1, (escapeDistanceRatio - 0.5) / 0.5);
+    } else {
+      this.warning.hudMode = "resisting";
+      const intervalDuration = pursuit.elapsedSeconds < GAME_CONFIG.police.resistingGraceSeconds
+        ? GAME_CONFIG.police.resistingGraceSeconds
+        : GAME_CONFIG.police.resistingIncreaseIntervalSeconds;
+      this.warning.hudProgress = Math.min(
+        1,
+        this.warning.resistingCountdownSeconds / intervalDuration,
+      );
+    }
 
     if (pursuit.bustSeconds >= GAME_CONFIG.police.bustDurationSeconds - 1e-6) {
       const state = this.stateFor(officer);
       state.peakSeverity = pursuit.peakSeverity;
-      return this.issueCitation(officer, state, profile, pursuit.offense);
+      return this.issueCitation(officer, state, profile, pursuit.offense, resistingFine);
     }
     if (pursuit.escapeSeconds >= GAME_CONFIG.police.escapeDurationSeconds - 1e-6) {
       this.clearPursuit();
@@ -286,6 +381,14 @@ export class PoliceManager {
     this.warning.progress = 0;
     this.warning.activelyObserving = false;
     this.warning.phase = "idle";
+    this.warning.hudMode = "idle";
+    this.warning.hudProgress = 0;
+    this.warning.escapeProgress = 0;
+    this.warning.potentialFine = 0;
+    this.warning.observedOffense = null;
+    this.warning.pursuitElapsedSeconds = 0;
+    this.warning.resistingArrestFine = 0;
+    this.warning.resistingCountdownSeconds = GAME_CONFIG.police.resistingGraceSeconds;
   }
 
   private issueCitation(
@@ -293,16 +396,20 @@ export class PoliceManager {
     state: ObservationState,
     profile: PlayerProfile,
     offense: PoliceOffense = dominantOffense(state),
+    resistingArrestFine = 0,
   ): PoliceCitation {
     const assessedFine = calculatePoliceFine(state.peakSeverity);
     this.clearPursuit();
     const amountPaid = profile.spend(assessedFine);
+    const resistingArrestAmountPaid = profile.spend(resistingArrestFine);
     profile.saveNow();
     const citation: PoliceCitation = {
       officerId: officer.id,
       offense,
       assessedFine,
       amountPaid,
+      resistingArrestFine,
+      resistingArrestAmountPaid,
       remainingBalance: profile.money,
     };
     this.citationCooldown = GAME_CONFIG.police.citationCooldownSeconds;
@@ -364,6 +471,25 @@ export function calculatePoliceFine(peakSeverity: number): number {
   return Math.max(police.minimumFine, Math.min(police.maximumFine, Math.round(unrounded / 5) * 5));
 }
 
+export function calculateResistingArrestFine(elapsedSeconds: number): number {
+  const police = GAME_CONFIG.police;
+  if (elapsedSeconds < police.resistingGraceSeconds) return 0;
+  const increases = 1 + Math.floor(
+    (elapsedSeconds - police.resistingGraceSeconds) / police.resistingIncreaseIntervalSeconds,
+  );
+  return increases * police.resistingFineIncrement;
+}
+
+export function secondsUntilResistingChange(elapsedSeconds: number): number {
+  const police = GAME_CONFIG.police;
+  if (elapsedSeconds < police.resistingGraceSeconds) {
+    return police.resistingGraceSeconds - elapsedSeconds;
+  }
+  const elapsedAfterGrace = elapsedSeconds - police.resistingGraceSeconds;
+  const completedIntervals = Math.floor(elapsedAfterGrace / police.resistingIncreaseIntervalSeconds);
+  return (completedIntervals + 1) * police.resistingIncreaseIntervalSeconds - elapsedAfterGrace;
+}
+
 function emptyObservation(respawnGeneration: number): ObservationState {
   return {
     meter: 0,
@@ -392,6 +518,15 @@ function dominantOffense(state: ObservationState): PoliceOffense {
   if (state.wrongSide >= state.speeding && state.wrongSide >= state.sidewalk) return "WRONG WAY";
   if (state.sidewalk >= state.speeding) return "SIDEWALK DRIVING";
   return "SPEEDING";
+}
+
+function offenseForRates(rates: DrivingViolationRates, state: ObservationState): PoliceOffense {
+  if (rates.speeding >= rates.wrongSide && rates.speeding >= rates.sidewalk && rates.speeding > 0) {
+    return "SPEEDING";
+  }
+  if (rates.wrongSide >= rates.sidewalk && rates.wrongSide > 0) return "WRONG WAY";
+  if (rates.sidewalk > 0) return "SIDEWALK DRIVING";
+  return dominantOffense(state);
 }
 
 function createVisionMesh(scene: Scene): Mesh {

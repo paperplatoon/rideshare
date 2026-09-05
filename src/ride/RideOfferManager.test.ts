@@ -15,6 +15,7 @@ describe("RideOfferManager", () => {
     const player = new PlayerCar(scene, town.roadSpawnPoints);
     const rideshare = getMissionLicense("rideshare")!;
     const offers = new RideOfferManager(town.deliveryPoints, player, rideshare);
+    const roadsById = new Map(town.roads.map((road) => [road.id, road]));
 
     expect(offers.offers).toHaveLength(3);
     expect(new Set(offers.offers.map((offer) => offer.tier)).size).toBeGreaterThan(1);
@@ -28,6 +29,8 @@ describe("RideOfferManager", () => {
       expect(offer.tripDistance).toBeLessThanOrEqual(config.maxDistance);
       expect(offer.pickupDistance).toBeLessThanOrEqual(GAME_CONFIG.ride.maxPickupDistance);
       expect(offer.missionCategoryId).toBe("rideshare");
+      expect(roadsById.get(offer.pickupPoint.roadId)?.allowsMissionStops).toBe(true);
+      expect(roadsById.get(offer.destinationPoint.roadId)?.allowsMissionStops).toBe(true);
     }
 
     const oldestId = offers.offers[2].id;

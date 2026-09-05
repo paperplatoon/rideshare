@@ -3,7 +3,13 @@ import { GAME_CONFIG } from "../game/config";
 import type { DrivingViolationRates, DrivingViolationSeverity } from "../game/types";
 import { PlayerProfile } from "../player/PlayerProfile";
 import type { TrafficCar } from "../traffic/TrafficCar";
-import { PoliceManager, calculatePoliceFine, isPlayerInPoliceView } from "./PoliceManager";
+import {
+  PoliceManager,
+  calculatePoliceFine,
+  calculateResistingArrestFine,
+  isPlayerInPoliceView,
+  secondsUntilResistingChange,
+} from "./PoliceManager";
 
 const legalRates: DrivingViolationRates = { speeding: 0, wrongSide: 0, sidewalk: 0, total: 0 };
 const legalSeverity: DrivingViolationSeverity = { speeding: 0, wrongSide: 0, sidewalk: 0, combined: 0 };
@@ -30,6 +36,126 @@ describe("PoliceManager", () => {
     expect(calculatePoliceFine(0.5)).toBe(95);
     expect(calculatePoliceFine(1)).toBe(150);
     expect(calculatePoliceFine(4)).toBe(150);
+  });
+
+  it("adds resisting-arrest fines after the 45-second grace period and every minute", () => {
+    expect(calculateResistingArrestFine(44.999)).toBe(0);
+    expect(calculateResistingArrestFine(45)).toBe(100);
+    expect(calculateResistingArrestFine(104.999)).toBe(100);
+    expect(calculateResistingArrestFine(105)).toBe(200);
+    expect(calculateResistingArrestFine(165)).toBe(300);
+    expect(secondsUntilResistingChange(0)).toBe(45);
+    expect(secondsUntilResistingChange(45)).toBe(60);
+    expect(secondsUntilResistingChange(104)).toBe(1);
+  });
+
+  it("collects a resisting-arrest surcharge only when a prolonged pursuit ends in a bust", () => {
+    const manager = new PoliceManager([officer(12)]);
+    const profile = new PlayerProfile();
+    profile.money = 500;
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 0.5)).toBe(true);
+
+    for (let step = 0; step < 460; step++) {
+      manager.update(0.1, { x: 0, z: 20 }, legalRates, legalSeverity, profile);
+    }
+    expect(manager.warning.resistingArrestFine).toBe(100);
+    expect(profile.money).toBe(500);
+
+    let citation = null;
+    for (let step = 0; step < 50 && !citation; step++) {
+      citation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
+    }
+    expect(citation).toMatchObject({
+      assessedFine: 95,
+      amountPaid: 95,
+      resistingArrestFine: 100,
+      resistingArrestAmountPaid: 100,
+      remainingBalance: 305,
+    });
+  });
+
+  it("reports resisting, arresting, fleeing, and escaping HUD progress", () => {
+    const manager = new PoliceManager([officer(15)]);
+    const profile = new PlayerProfile();
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 0.5)).toBe(true);
+    expect(manager.warning.hudMode).toBe("resisting");
+    expect(manager.warning.hudProgress).toBe(1);
+    expect(manager.warning.potentialFine).toBe(95);
+
+    manager.update(0.1, { x: 0, z: 300 }, legalRates, legalSeverity, profile);
+    expect(manager.warning.hudMode).toBe("resisting");
+
+    manager.update(0.1, { x: 0, z: 450 }, legalRates, legalSeverity, profile);
+    expect(manager.warning.hudMode).toBe("fleeing");
+    expect(manager.warning.hudProgress).toBeCloseTo(0.5);
+
+    manager.update(0.1, { x: 0, z: 600 }, legalRates, legalSeverity, profile);
+    expect(manager.warning.hudMode).toBe("escaping");
+    expect(manager.warning.hudProgress).toBe(1);
+    expect(manager.warning.escapeProgress).toBeCloseTo(0.1 / GAME_CONFIG.police.escapeDurationSeconds);
+
+    for (let step = 0; step < 10; step++) {
+      manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
+    }
+    manager.update(0.1, { x: 0, z: 20 }, legalRates, legalSeverity, profile);
+    expect(manager.warning.hudMode).toBe("arresting");
+    expect(manager.warning.hudProgress).toBeGreaterThan(0);
+    expect(manager.warning.escapeProgress).toBe(0);
+  });
+
+  it("shows the complete fine if caught and resets the resisting meter each minute", () => {
+    const manager = new PoliceManager([officer(16)]);
+    const profile = new PlayerProfile();
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 0.5)).toBe(true);
+
+    manager.update(45, { x: 0, z: 20 }, legalRates, legalSeverity, profile);
+
+    expect(manager.warning.resistingArrestFine).toBe(100);
+    expect(manager.warning.potentialFine).toBe(195);
+    expect(manager.warning.hudMode).toBe("resisting");
+    expect(manager.warning.hudProgress).toBe(1);
+  });
+
+  it("builds bust progress at high speed when the officer stays close", () => {
+    const manager = new PoliceManager([officer(13)]);
+    const profile = new PlayerProfile();
+    profile.money = 500;
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 0.5)).toBe(true);
+
+    let citation = null;
+    for (let step = 0; step < 50 && !citation; step++) {
+      citation = manager.update(
+        0.1,
+        { x: 0, z: 5, velocityZ: 100 },
+        legalRates,
+        legalSeverity,
+        profile,
+      );
+    }
+    expect(citation).not.toBeNull();
+  });
+
+  it("allows capture tolerance outside the exact follow target so the meter cannot stall", () => {
+    const manager = new PoliceManager([officer(14)]);
+    const profile = new PlayerProfile();
+    profile.money = 500;
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 0.5)).toBe(true);
+    const settledDistance = GAME_CONFIG.traffic.vehicleLength / 2
+      + GAME_CONFIG.player.length / 2
+      + GAME_CONFIG.police.pursuitDesiredGapMeters
+      + GAME_CONFIG.police.pursuitHoldDeadZone;
+
+    let citation = null;
+    for (let step = 0; step < 50 && !citation; step++) {
+      citation = manager.update(
+        0.1,
+        { x: 0, z: settledDistance },
+        legalRates,
+        legalSeverity,
+        profile,
+      );
+    }
+    expect(citation).not.toBeNull();
   });
 
   it("starts pursuit at the evidence threshold and cites after four seconds in bust range", () => {
@@ -77,9 +203,11 @@ describe("PoliceManager", () => {
     manager.update(0.1, { x: 0, z: 40 }, rates, severity, profile);
     expect(manager.warning.progress).toBeCloseTo(0.05);
     expect(manager.warning.activelyObserving).toBe(true);
+    expect(manager.warning.observedOffense).toBe("SPEEDING");
 
     manager.update(0.1, { x: 0, z: 40 }, legalRates, legalSeverity, profile);
     expect(manager.warning.progress).toBe(0);
+    expect(manager.warning.observedOffense).toBeNull();
 
     manager.update(0.2, { x: 0, z: 40 }, rates, severity, profile);
     expect(manager.warning.progress).toBeGreaterThan(0);
@@ -147,19 +275,42 @@ describe("PoliceManager", () => {
     expect(manager.warning.progress).toBe(0);
   });
 
-  it("cites any direct collision with a police vehicle regardless of fault or view", () => {
-    const manager = new PoliceManager([officer(7)]);
+  it("starts pursuit instead of immediately citing a direct police collision", () => {
+    const policeCar = officer(7);
+    const manager = new PoliceManager([policeCar]);
     const profile = new PlayerProfile();
     profile.money = 100;
 
-    const citation = manager.registerPoliceCollision(7, 0, profile);
+    const started = manager.registerPoliceCollision(7, { x: 12, z: 20 }, 0);
 
+    expect(started).toBe(true);
+    expect(manager.isPursuitActive).toBe(true);
+    expect(manager.activePursuerId).toBe(7);
+    expect(policeCar.setPursuitTarget).toHaveBeenCalledWith({ x: 12, z: 20 });
+    expect(profile.money).toBe(100);
+  });
+
+  it("ignores direct and witnessed collision citations during an active pursuit", () => {
+    const pursuingOfficer = officer(10);
+    const otherOfficer = officer(11);
+    const manager = new PoliceManager([pursuingOfficer, otherOfficer]);
+    const profile = new PlayerProfile();
+    profile.money = 500;
+    expect(manager.registerPoliceCollision(10, { x: 0, z: 40 }, 0.5)).toBe(true);
+
+    expect(manager.registerPoliceCollision(11, { x: 5, z: 5 }, 1)).toBe(false);
+    expect(manager.registerTrafficCollision({ x: 0, z: 40 }, 1)).toBe(false);
+    expect(manager.activePursuerId).toBe(10);
+    expect(otherOfficer.setPursuitTarget).not.toHaveBeenCalled();
+    expect(profile.money).toBe(500);
+
+    let citation = null;
+    for (let step = 0; step < 50 && !citation; step++) {
+      citation = manager.update(0.1, { x: 0, z: 5 }, legalRates, legalSeverity, profile);
+    }
     expect(citation).toMatchObject({
-      officerId: 7,
+      officerId: 10,
       offense: "COLLISION WITH POLICE",
-      assessedFine: GAME_CONFIG.police.minimumFine,
-      amountPaid: GAME_CONFIG.police.minimumFine,
-      remainingBalance: 100 - GAME_CONFIG.police.minimumFine,
     });
   });
 
@@ -205,6 +356,8 @@ describe("PoliceManager", () => {
     manager.update(0.1, escapedPlayer, legalRates, legalSeverity, profile);
     expect(manager.isPursuitActive).toBe(false);
     expect(manager.warning.phase).toBe("idle");
+    expect(manager.warning.resistingArrestFine).toBe(0);
+    expect(manager.warning.pursuitElapsedSeconds).toBe(0);
     expect(policeCar.clearPursuit).toHaveBeenCalled();
   });
 });

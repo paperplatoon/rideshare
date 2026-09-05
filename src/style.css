@@ -137,54 +137,66 @@ button:disabled {
 
 .hud {
   position: absolute;
-  top: 18px;
-  left: 18px;
-  display: grid;
-  gap: 5px;
-  padding: 12px 14px;
-  min-width: 190px;
-  background: rgba(8, 12, 15, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  font-size: 15px;
+  top: 10px;
+  left: 50%;
+  width: min(920px, calc(100vw - 20px));
+  transform: translateX(-50%);
+  display: block;
+  font-size: 13px;
   font-weight: 700;
   text-shadow: 0 1px 2px #000;
   z-index: 5;
 }
 
+.hud-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 6px;
+  background: rgba(8, 12, 15, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.hud-stat {
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+
+.hud-stat:first-child {
+  color: #75f0b0;
+}
+
 .speedometer {
-  margin: 4px 0;
-  padding: 7px 9px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  margin: 0;
+  padding: 4px 7px;
+  background: transparent;
+  border: 0;
   border-radius: 6px;
 }
 
 .speedometer.warning {
   background: rgba(192, 38, 38, 0.88);
+  border: 1px solid rgba(255, 210, 210, 0.72);
   border-color: rgba(255, 210, 210, 0.72);
 }
 
-.fuel-meter {
-  margin: 4px 0;
-  padding: 8px 9px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  transform-origin: left center;
-}
-
+.fuel-meter,
 .damage-meter {
-  margin: 4px 0;
-  padding: 8px 9px;
+  min-width: 86px;
+  margin: 0;
+  padding: 4px 7px;
   background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
 }
 
 .police-meter {
-  margin: 4px 0;
-  padding: 8px 9px;
+  width: min(390px, 100%);
+  margin: 5px auto 0;
+  padding: 6px 8px;
   background: rgba(24, 43, 72, 0.9);
   border: 1px solid rgba(140, 190, 255, 0.52);
   border-radius: 6px;
@@ -210,12 +222,21 @@ button:disabled {
 .fuel-label,
 .damage-label,
 .police-meter-label {
-  margin-bottom: 5px;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.police-fine-label {
+  margin: -1px 0 5px;
+  color: #ff646d;
+  font-size: 0.72em;
 }
 
 .fuel-track,
 .damage-track,
 .police-meter-track {
+  position: relative;
   height: 9px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.38);
@@ -243,6 +264,27 @@ button:disabled {
 
 .police-meter.observing .police-meter-fill {
   background: #ff5967;
+}
+
+.police-meter.resisting .police-meter-fill {
+  background: #b88a18;
+}
+
+.police-meter.arresting .police-meter-fill {
+  background: #ef3f4c;
+}
+
+.police-meter.fleeing .police-meter-fill,
+.police-meter.escaping .police-meter-fill {
+  background: #70c7ff;
+}
+
+.police-escape-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 999px;
+  background: #1769aa;
 }
 
 .fuel-meter.low .fuel-fill {
@@ -409,15 +451,13 @@ button:disabled {
 }
 
 .indicator {
-  position: absolute;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: static;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
-  min-width: 126px;
+  padding: 7px 10px;
+  min-width: 86px;
   justify-content: center;
   background: rgba(8, 12, 15, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -425,6 +465,14 @@ button:disabled {
   font-weight: 800;
   text-shadow: 0 1px 2px #000;
   z-index: 5;
+}
+
+.mission-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: min(520px, 100%);
+  margin: 5px auto 0;
 }
 
 .arrow {
@@ -436,11 +484,11 @@ button:disabled {
 
 .phone-overlay {
   position: absolute;
-  inset: 30px;
+  inset: 0;
   display: grid;
   place-items: center;
   pointer-events: auto;
-  background: rgba(6, 9, 11, 0.64);
+  background: rgba(6, 9, 11, 0.58);
   z-index: 15;
 }
 
@@ -453,7 +501,21 @@ button:disabled {
   z-index: 14;
 }
 
-.phone-panel,
+.phone-panel {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(404px, calc(100vw - 20px));
+  height: min(720px, calc(100vh - 20px));
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 12px 8px;
+  background: #151b1f;
+  border: 6px solid #080b0d;
+  border-radius: 28px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
 .map-panel {
   box-sizing: border-box;
   width: min(760px, calc(100vw - 64px));
@@ -472,32 +534,69 @@ button:disabled {
   padding: 16px;
 }
 
-.phone-title,
-.map-title {
-  margin-bottom: 18px;
+.phone-title {
+  margin-bottom: 10px;
   text-align: center;
-  font-size: 26px;
+  font-size: 18px;
   font-weight: 900;
 }
 
-.phone-header {
-  position: sticky;
-  top: -24px;
-  z-index: 3;
+.phone-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin: -24px -24px 20px;
-  padding: 16px 24px;
-  background: rgba(18, 23, 27, 0.98);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.phone-title-row .phone-title {
+  margin: 0;
+  text-align: left;
+}
+
+.phone-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 3px 6px;
+}
+
+.phone-brand {
+  color: #dce5e8;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.phone-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phone-close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e8eef0;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.phone-close:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .phone-tabs {
   display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   background: rgba(0, 0, 0, 0.28);
@@ -506,12 +605,14 @@ button:disabled {
 
 .phone-tab {
   margin: 0;
-  min-height: 40px;
-  padding: 6px;
+  min-width: 0;
+  min-height: 29px;
+  padding: 4px 2px;
   background: transparent;
   color: #c5d0d5;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.15;
+  white-space: nowrap;
 }
 
 .phone-tab:hover {
@@ -525,26 +626,45 @@ button:disabled {
 
 .phone-balance {
   color: #75f0b0;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
   white-space: nowrap;
 }
 
+.phone-screen {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 2px 2px;
+}
+
+.phone-home-indicator {
+  width: 94px;
+  height: 4px;
+  margin: 5px auto 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
 .phone-feedback {
-  margin: -6px 0 16px;
-  padding: 10px 12px;
+  position: absolute;
+  inset: 5px 5px auto;
+  z-index: 4;
+  margin: 0;
+  padding: 8px 10px;
   background: rgba(37, 151, 91, 0.25);
   border: 1px solid rgba(117, 240, 176, 0.45);
   border-radius: 6px;
   color: #9ff4c6;
+  font-size: 12px;
   font-weight: 900;
   text-align: center;
 }
 
 .mission-status {
-  margin: -7px 0 14px;
+  margin: -4px 0 8px;
   color: #f2c14e;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
   text-align: center;
 }
@@ -552,9 +672,9 @@ button:disabled {
 .license-lock {
   display: grid;
   justify-items: center;
-  width: min(520px, 100%);
-  margin: 34px auto;
-  padding: 38px 20px;
+  width: 100%;
+  margin: 22px auto;
+  padding: 28px 14px;
   border-block: 1px solid rgba(255, 255, 255, 0.16);
   text-align: center;
 }
@@ -566,44 +686,67 @@ button:disabled {
 }
 
 .license-lock-title {
-  margin-top: 7px;
-  font-size: 30px;
+  margin-top: 5px;
+  font-size: 23px;
   font-weight: 1000;
 }
 
 .license-lock-description {
-  max-width: 420px;
-  margin-top: 12px;
+  max-width: 330px;
+  margin-top: 8px;
   color: #d5dfe3;
+  font-size: 13px;
   line-height: 1.45;
 }
 
 .license-lock-rate {
-  margin-top: 16px;
+  margin-top: 12px;
   color: #75f0b0;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 900;
 }
 
 .license-lock button {
-  min-width: 240px;
+  min-width: 220px;
+  margin-top: 14px;
 }
 
 .map-title {
   margin-bottom: 10px;
+  text-align: center;
   font-size: 20px;
+  font-weight: 900;
 }
 
 .map-canvas {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 9%, rgba(255, 255, 255, 0.18) 9% 11%, transparent 11% 20%),
-    repeating-linear-gradient(0deg, transparent 0 9%, rgba(255, 255, 255, 0.18) 9% 11%, transparent 11% 20%),
-    #253039;
+  background: #253039;
   border: 2px solid rgba(255, 255, 255, 0.24);
   border-radius: 8px;
+}
+
+.map-road {
+  position: absolute;
+  z-index: 0;
+  background: rgba(225, 232, 236, 0.18);
+}
+
+.map-road.northSouth {
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.map-road.eastWest {
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+.map-road.highway {
+  background: rgba(235, 209, 105, 0.25);
 }
 
 .map-marker,
@@ -617,7 +760,9 @@ button:disabled {
   font-size: 13px;
   font-weight: 1000;
   line-height: 1;
+  transform: translate(-50%, -50%);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 0 16px rgba(255, 255, 255, 0.22);
+  z-index: 2;
 }
 
 .map-player {
@@ -625,6 +770,22 @@ button:disabled {
   background: #ffffff;
   border-radius: 5px;
   font-size: 18px;
+  z-index: 4;
+}
+
+.map-marker.upcoming {
+  opacity: 0.58;
+}
+
+.map-marker.completed {
+  opacity: 0.48;
+}
+
+.map-marker.current {
+  width: 29px;
+  height: 29px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.82), 0 0 20px rgba(255, 255, 255, 0.52);
+  z-index: 3;
 }
 
 .map-marker.gas {
@@ -692,22 +853,44 @@ button:disabled {
 
 .offer-list {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .garage-list,
 .upgrade-list,
 .scorecard-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.phone-pagination {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #afbec4;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.phone-pagination button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  margin: 0;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .scorecard-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 14px;
-  padding: 12px 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 8px;
+  padding: 8px 0;
   background: rgba(0, 0, 0, 0.24);
   border-block: 1px solid rgba(255, 255, 255, 0.14);
 }
@@ -715,7 +898,7 @@ button:disabled {
 .scorecard-summary > div {
   display: grid;
   gap: 3px;
-  padding: 0 10px;
+  padding: 3px 6px;
   border-right: 1px solid rgba(255, 255, 255, 0.12);
   text-align: center;
 }
@@ -724,9 +907,13 @@ button:disabled {
   border-right: 0;
 }
 
+.scorecard-summary > div:nth-child(2) {
+  border-right: 0;
+}
+
 .scorecard-summary strong {
   color: #75f0b0;
-  font-size: 17px;
+  font-size: 14px;
 }
 
 .scorecard-summary span,
@@ -737,12 +924,12 @@ button:disabled {
 }
 
 .scorecard-note {
-  margin: -5px 0 12px;
+  margin: -3px 0 7px;
   text-align: right;
 }
 
 .ride-scorecard {
-  padding: 14px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -764,7 +951,7 @@ button:disabled {
 }
 
 .scorecard-stars {
-  margin: 10px 0;
+  margin: 6px 0;
   color: #f2c14e;
   font-size: 20px;
 }
@@ -772,8 +959,8 @@ button:disabled {
 .scorecard-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px 12px;
-  padding: 10px 0;
+  gap: 4px 9px;
+  padding: 7px 0;
   border-block: 1px solid rgba(255, 255, 255, 0.12);
 }
 
@@ -791,7 +978,7 @@ button:disabled {
 
 .scorecard-money {
   align-items: center;
-  margin-top: 11px;
+  margin-top: 7px;
   color: #b7c5ca;
   font-size: 11px;
   font-weight: 800;
@@ -805,7 +992,7 @@ button:disabled {
 .scorecard-empty {
   display: grid;
   gap: 5px;
-  padding: 42px 16px;
+  padding: 32px 12px;
   color: #9fb2ba;
   text-align: center;
 }
@@ -816,7 +1003,7 @@ button:disabled {
 
 .garage-card,
 .upgrade-card {
-  padding: 14px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -839,7 +1026,7 @@ button:disabled {
 
 .vehicle-name,
 .upgrade-name {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -847,7 +1034,7 @@ button:disabled {
 .upgrade-level {
   margin-top: 2px;
   color: #9fb2ba;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -861,8 +1048,8 @@ button:disabled {
 
 .vehicle-stats {
   display: grid;
-  gap: 7px;
-  margin-top: 12px;
+  gap: 5px;
+  margin-top: 8px;
 }
 
 .vehicle-stat-label {
@@ -901,11 +1088,12 @@ button:disabled {
 .garage-card > button,
 .upgrade-card > button {
   width: 100%;
-  margin-top: 13px;
+  margin-top: 8px;
+  padding: 8px 10px;
 }
 
 .upgrade-card {
-  min-height: 118px;
+  min-height: 78px;
   flex-wrap: wrap;
 }
 
@@ -970,67 +1158,53 @@ button:disabled {
 }
 
 @media (max-width: 700px) {
+  .hud-stats {
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .hud-stat,
+  .speedometer,
+  .fuel-meter,
+  .damage-meter {
+    padding: 3px 5px;
+  }
+
+  .fuel-meter,
+  .damage-meter {
+    min-width: 76px;
+  }
+
+  .mission-row {
+    width: 100%;
+  }
+
+  .indicator {
+    min-width: 72px;
+    padding-inline: 6px;
+  }
+
+  .performance-monitor {
+    display: none;
+  }
+
   .phone-overlay {
-    inset: 8px;
+    inset: 0;
   }
 
   .phone-panel {
-    width: 100%;
-    max-height: calc(100vh - 32px);
-    padding: 16px;
-  }
-
-  .phone-header {
-    top: -16px;
-    align-items: stretch;
-    flex-direction: column;
-    margin: -16px -16px 16px;
-    padding: 12px 16px;
+    width: min(404px, calc(100vw - 8px));
+    height: calc(100vh - 8px);
   }
 
   .phone-tabs {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .phone-tab {
-    padding: 7px 4px;
-  }
-
-  .garage-list,
-  .upgrade-list,
-  .scorecard-list {
-    grid-template-columns: 1fr;
-  }
-
-  .scorecard-summary {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .scorecard-summary > div:nth-child(2) {
-    border-right: 0;
-  }
-
-  .scorecard-summary > div:nth-child(n + 3) {
-    margin-top: 10px;
-  }
-
-  .offer-card {
-    grid-template-columns: 1fr;
-  }
-
-  .phone-panel .offer-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-  }
-
-  .phone-panel .offer-card .ride-details {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .phone-panel .offer-card > button {
-    grid-column: 2;
-    grid-row: 1;
+    padding-inline: 1px;
+    font-size: 8px;
   }
 
   .progression-debug {
@@ -1041,28 +1215,76 @@ button:disabled {
 .offer-card,
 .current-ride-card {
   display: grid;
-  grid-template-columns: 1fr 1.4fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 16px;
+  gap: 8px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
 }
 
+.offer-card > button {
+  min-width: 72px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
 .current-ride-card {
   grid-template-columns: 1fr;
-  font-size: 20px;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.ride-hud {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 7px 9px;
+  background: rgba(8, 12, 15, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.ride-hud > div {
+  margin-top: 2px;
+}
+
+.ride-score-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px !important;
+}
+
+.ride-stars {
+  color: #f2c14e;
+  letter-spacing: 1px;
+}
+
+.ride-tip {
+  color: #75f0b0;
+  font-weight: 900;
+}
+
+.ride-tip-penalty {
+  color: #ff646d;
+  font-weight: 900;
 }
 
 .ride-name {
-  font-size: 22px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 16px;
   font-weight: 900;
 }
 
 .ride-type {
-  margin-top: 3px;
+  margin-top: 2px;
   color: #f2c14e;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -1075,30 +1297,130 @@ button:disabled {
 
 .ride-details {
   display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   color: #e2e8ea;
 }
 
-.expires {
-  color: #9fb2ba;
+.ride-details > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 5px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 5px;
+  text-align: center;
 }
 
-.expires.urgent,
-.collision-flash {
-  color: #ff8a8a;
+.ride-details span {
+  color: #90a3ab;
+  font-size: 8px;
+  font-weight: 900;
 }
 
-.phone-close-hint {
-  margin-top: 18px;
-  text-align: right;
-  color: #9fb2ba;
-  font-size: 13px;
-  font-weight: 800;
+.ride-details strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .phone-current-score {
   color: #f2c14e;
   font-weight: 900;
+}
+
+.phone-screen {
+  margin-top: 7px;
+  padding: 13px 10px 8px;
+  background: #f4f5f6;
+  color: #171b1e;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(18, 27, 32, 0.06);
+}
+
+.phone-screen .phone-title,
+.phone-screen .ride-name,
+.phone-screen .vehicle-name,
+.phone-screen .upgrade-name,
+.phone-screen .scorecard-empty strong {
+  color: #171b1e;
+}
+
+.phone-screen .offer-card,
+.phone-screen .current-ride-card,
+.phone-screen .garage-card,
+.phone-screen .upgrade-card,
+.phone-screen .ride-scorecard {
+  background: #ffffff;
+  color: #20262a;
+  border-color: #cdd4d8;
+  box-shadow: 0 1px 2px rgba(18, 27, 32, 0.08);
+}
+
+.phone-screen .garage-card.equipped {
+  background: #eaf7f0;
+  border-color: #60b789;
+}
+
+.phone-screen .ride-details > div,
+.phone-screen .scorecard-summary {
+  background: #e9edef;
+}
+
+.phone-screen .ride-details strong,
+.phone-screen .vehicle-stat-label,
+.phone-screen .scorecard-details strong {
+  color: #242b2f;
+}
+
+.phone-screen .ride-details span,
+.phone-screen .vehicle-status,
+.phone-screen .upgrade-level,
+.phone-screen .vehicle-stat-label span:last-child,
+.phone-screen .scorecard-summary span,
+.phone-screen .scorecard-note,
+.phone-screen .scorecard-date,
+.phone-screen .scorecard-details > div,
+.phone-screen .scorecard-empty,
+.phone-screen .phone-pagination {
+  color: #65737a;
+}
+
+.phone-screen .scorecard-summary,
+.phone-screen .scorecard-details,
+.phone-screen .license-lock {
+  border-color: #d1d7da;
+}
+
+.phone-screen .scorecard-summary > div {
+  border-color: #cbd2d5;
+}
+
+.phone-screen .scorecard-money {
+  color: #526067;
+}
+
+.phone-screen .license-lock-description {
+  color: #4b575d;
+}
+
+.phone-screen .phone-current-score,
+.phone-screen .ride-type,
+.phone-screen .mission-status {
+  color: #966d00;
+}
+
+.map-panel .phone-close-hint {
+  margin-top: 18px;
+  color: #9fb2ba;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.collision-flash {
+  color: #ff8a8a;
 }
 
 .ride-result {

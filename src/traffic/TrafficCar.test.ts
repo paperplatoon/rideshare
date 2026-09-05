@@ -182,6 +182,25 @@ describe("TrafficCar", () => {
     leaderFixture.dispose();
   });
 
+  it("uses hard yielding normally and only a very light brake for an intentional conflict", () => {
+    const hardFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    const lightFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    hardFixture.car.setSafetyBrakeMode("hard");
+    lightFixture.car.setSafetyBrakeMode("light");
+    const hardStart = hardFixture.car.speed;
+    const lightStart = lightFixture.car.speed;
+
+    hardFixture.car.update(0.1, []);
+    lightFixture.car.update(0.1, []);
+
+    expect(hardStart - hardFixture.car.speed).toBeCloseTo(GAME_CONFIG.traffic.braking * 0.1);
+    expect(lightStart - lightFixture.car.speed).toBeCloseTo(
+      GAME_CONFIG.traffic.intentionalCrashBraking * 0.1,
+    );
+    hardFixture.dispose();
+    lightFixture.dispose();
+  });
+
   it("uses pursuit acceleration and a fixed pursuit speed target for police", () => {
     const fixture = createCarFixture(GAME_CONFIG.traffic.minSpeed, () => 0.25, "police");
     const { car } = fixture;
@@ -195,6 +214,132 @@ describe("TrafficCar", () => {
     car.clearPursuit();
     expect(car.isPursuing).toBe(false);
 
+    fixture.dispose();
+  });
+
+  it("matches player speed and calmly stops behind a stopped player", () => {
+    const movingFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed, () => 0.25, "police");
+    const movingPolice = movingFixture.car;
+    movingPolice.mesh.position.x = 500;
+    movingPolice.setPursuitTarget({
+      x: 530,
+      z: movingPolice.mesh.position.z,
+      heading: Math.PI / 2,
+      velocityX: 30,
+      velocityZ: 0,
+      vehicleLength: GAME_CONFIG.player.length,
+    });
+    const movingSpeed = movingPolice.speed;
+    movingPolice.update(0.1, []);
+    expect(movingPolice.speed).toBeLessThan(movingSpeed);
+    expect(movingPolice.speed).toBeGreaterThan(30);
+
+    const stoppedFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed, () => 0.25, "police");
+    const stoppedPolice = stoppedFixture.car;
+    stoppedPolice.mesh.position.x = 500;
+    const desiredCenterDistance = GAME_CONFIG.traffic.vehicleLength / 2
+      + GAME_CONFIG.player.length / 2
+      + GAME_CONFIG.police.pursuitDesiredGapMeters;
+    stoppedPolice.setPursuitTarget({
+      x: 500 + desiredCenterDistance,
+      z: stoppedPolice.mesh.position.z,
+      heading: Math.PI / 2,
+      velocityX: 0,
+      velocityZ: 0,
+      vehicleLength: GAME_CONFIG.player.length,
+    });
+    stoppedPolice.update(0.1, []);
+    expect(stoppedPolice.speed).toBe(0);
+
+    movingFixture.dispose();
+    stoppedFixture.dispose();
+  });
+
+  it("brakes early enough to settle behind a player who has stopped at the curb", () => {
+    const fixture = createCarFixture(GAME_CONFIG.police.pursuitSpeed, () => 0.25, "police");
+    const { car } = fixture;
+    car.mesh.position.x = 300;
+    const playerX = 500;
+    const roadsideZ = 1000 - GAME_CONFIG.world.roadWidth / 2 + GAME_CONFIG.player.width / 2;
+    const target = {
+      x: playerX,
+      z: roadsideZ,
+      heading: Math.PI / 2,
+      velocityX: 0,
+      velocityZ: 0,
+      vehicleLength: GAME_CONFIG.player.length,
+    };
+    for (let step = 0; step < 400; step++) {
+      car.setPursuitTarget(target);
+      car.update(0.05, []);
+    }
+    const centerDistance = Math.hypot(playerX - car.mesh.position.x, roadsideZ - car.mesh.position.z);
+    const captureDistance = GAME_CONFIG.traffic.vehicleLength / 2
+      + GAME_CONFIG.player.length / 2
+      + GAME_CONFIG.police.pursuitCaptureGapMeters;
+    expect(car.mesh.position.x).toBeLessThan(playerX);
+    expect(centerDistance).toBeLessThanOrEqual(captureDistance);
+    expect(car.speed).toBeLessThan(1);
+    fixture.dispose();
+  });
+
+  it("pulls ordinary traffic over after a serious crash", () => {
+    const fixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    const { car } = fixture;
+    car.registerCollision(99, 0.2, true);
+    expect(car.accidentState).toBe("braking");
+
+    for (let step = 0; step < 200 && car.accidentState === "braking"; step++) {
+      car.update(0.05, []);
+    }
+    expect(["pullingOver", "stopped"]).toContain(car.accidentState);
+
+    for (let step = 0; step < 400 && car.accidentState !== "stopped"; step++) {
+      car.update(0.05, []);
+    }
+    expect(car.accidentState).toBe("stopped");
+    expect(car.speed).toBe(0);
+    fixture.dispose();
+  });
+
+  it("waits briefly and resumes after an NPC-only serious crash", () => {
+    const fixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    const { car } = fixture;
+    car.registerCollision(99, 0.2, true, false);
+
+    for (let step = 0; step < 200 && car.accidentState !== "waiting"; step++) {
+      car.update(0.05, []);
+    }
+    expect(car.accidentState).toBe("waiting");
+    for (let step = 0; step < 40; step++) car.update(0.05, []);
+    expect(car.accidentState).toBe("driving");
+    expect(car.speed).toBeGreaterThan(0);
+    fixture.dispose();
+  });
+
+  it("stabilizes and resumes pursuit with accumulated damage after a serious crash", () => {
+    const fixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed, () => 0.25, "police");
+    const { car } = fixture;
+    car.setPursuitTarget({ x: 1800, z: 1000, heading: Math.PI / 2, velocityX: 40, velocityZ: 0 });
+    car.registerCollision(99, 0.3, true);
+    expect(car.accidentState).toBe("pursuitRecovery");
+    expect(car.damagePercent).toBeCloseTo(0.3);
+
+    for (let step = 0; step < 20; step++) car.update(0.1, []);
+    expect(car.accidentState).toBe("driving");
+    expect(car.isPursuing).toBe(true);
+    fixture.dispose();
+  });
+
+  it("promotes a collision-triggered officer from accident braking into pursuit recovery", () => {
+    const fixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed, () => 0.25, "police");
+    const { car } = fixture;
+    car.registerCollision(-1, 0.2, true);
+    expect(car.accidentState).toBe("braking");
+
+    car.setPursuitTarget({ x: 1800, z: 1000, heading: Math.PI / 2, velocityX: 40, velocityZ: 0 });
+    expect(car.accidentState).toBe("pursuitRecovery");
+    expect(car.isPursuing).toBe(true);
     fixture.dispose();
   });
 
@@ -286,6 +431,37 @@ describe("TrafficCar", () => {
     expect(car.isTurning).toBe(true);
     expect(car.direction).toBe("south");
 
+    fixture.dispose();
+  });
+
+  it("can follow a late player turn until the actual turn approach", () => {
+    const fixture = createCarFixture(GAME_CONFIG.traffic.minSpeed, () => 0.25, "police");
+    const { car } = fixture;
+    car.mesh.position.x = 940;
+
+    car.setPursuitTarget({ x: 1000, z: 2000, heading: 0, velocityX: 0, velocityZ: 40 });
+    car.setPursuitTarget({ x: 1000, z: 0, heading: Math.PI, velocityX: 0, velocityZ: -40 });
+    for (let step = 0; step < 30 && !car.isTurning; step++) car.update(0.1, []);
+
+    expect(car.isTurning).toBe(true);
+    expect(car.direction).toBe("north");
+    fixture.dispose();
+  });
+
+  it("scales pursuit speed above a faster player's current speed", () => {
+    const fixture = createCarFixture(GAME_CONFIG.police.pursuitSpeed, () => 0.25, "police");
+    const { car } = fixture;
+    car.setPursuitTarget({
+      x: 2000,
+      z: 1000,
+      heading: Math.PI / 2,
+      velocityX: 150,
+      velocityZ: 0,
+      vehicleLength: GAME_CONFIG.player.length,
+    });
+    car.update(0.5, []);
+
+    expect(car.speed).toBeGreaterThan(GAME_CONFIG.police.pursuitSpeed);
     fixture.dispose();
   });
 });

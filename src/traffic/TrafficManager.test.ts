@@ -4,9 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import { GAME_CONFIG } from "../game/config";
 import { PlayerCar } from "../player/PlayerCar";
 import { TownGenerator } from "../world/Town";
-import { TrafficManager } from "./TrafficManager";
+import {
+  TrafficManager,
+  shouldAllowIntentionalCrash,
+  willVehiclesConflict,
+} from "./TrafficManager";
+import type { TrafficCar } from "./TrafficCar";
 
 describe("TrafficManager", () => {
+  it("predicts local crossing conflicts and rolls the intentional-crash chance at the boundary", () => {
+    const eastbound = predictiveCar(1, -10, 0, 10, 0);
+    const southbound = predictiveCar(2, 0, -10, 0, 10);
+    const escaping = predictiveCar(3, 10, 0, 20, 0);
+
+    expect(willVehiclesConflict(eastbound, southbound, 1.25, 12)).toBe(true);
+    expect(willVehiclesConflict(eastbound, escaping, 1.25, 12)).toBe(false);
+    expect(shouldAllowIntentionalCrash(() => 0, 2000)).toBe(true);
+    expect(shouldAllowIntentionalCrash(() => 1 / 2000, 2000)).toBe(false);
+  });
+
   it("shares car geometry and activates only traffic near the player", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
@@ -38,6 +54,7 @@ describe("TrafficManager", () => {
     expect(traffic.cars[0].mesh.geometry).toBe(traffic.cars[4].mesh.geometry);
     expect(traffic.cars[10].mesh.geometry).toBe(traffic.cars[14].mesh.geometry);
     expect(traffic.cars[0].mesh.isVerticesDataPresent("color")).toBe(true);
+    expect(traffic.cars[10].mesh.getTotalVertices()).toBeGreaterThan(200);
     const civilianBounds = traffic.cars[10].mesh.getBoundingInfo().boundingBox.extendSize;
     expect(civilianBounds.x * 2).toBeCloseTo(GAME_CONFIG.traffic.vehicleWidth);
     expect(civilianBounds.z * 2).toBeCloseTo(GAME_CONFIG.traffic.vehicleLength);
@@ -112,4 +129,67 @@ describe("TrafficManager", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("creates one serious accident event for sustained NPC-to-NPC contact", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const town = new TownGenerator(scene).generate();
+    const player = new PlayerCar(scene, town.roadSpawnPoints);
+    const traffic = new TrafficManager(
+      scene,
+      town.roadSpawnPoints,
+      town.roadPositionsX,
+      town.roadPositionsZ,
+    );
+    for (let index = 0; index < traffic.cars.length; index++) {
+      traffic.cars[index].mesh.position.set(
+        player.root.position.x + 260 + (index % 10) * 15,
+        1,
+        player.root.position.z + 260 + Math.floor(index / 10) * 15,
+      );
+    }
+    const first = traffic.cars[GAME_CONFIG.police.vehicleCount];
+    const second = traffic.cars[GAME_CONFIG.police.vehicleCount + 1];
+    const firstX = player.root.position.x + 50;
+    const firstZ = player.root.position.z + 50;
+    first.mesh.position.set(firstX, 1, firstZ);
+    second.mesh.position.set(firstX + GAME_CONFIG.traffic.hitboxWidth - 0.5, 1, firstZ);
+    first.mesh.rotation.y = 0;
+    second.mesh.rotation.y = 0;
+    vi.spyOn(first, "getVelocityX").mockReturnValue(20);
+    vi.spyOn(first, "getVelocityZ").mockReturnValue(0);
+    vi.spyOn(second, "getVelocityX").mockReturnValue(0);
+    vi.spyOn(second, "getVelocityZ").mockReturnValue(0);
+
+    traffic.update(0, player);
+    expect(first.accidentState).toBe("braking");
+    expect(second.accidentState).toBe("braking");
+    const firstDamage = first.damagePercent;
+    expect(firstDamage).toBeGreaterThan(0);
+
+    first.mesh.position.set(firstX, 1, firstZ);
+    second.mesh.position.set(firstX + GAME_CONFIG.traffic.hitboxWidth - 0.5, 1, firstZ);
+    traffic.update(0, player);
+    expect(first.damagePercent).toBe(firstDamage);
+    expect(second.damagePercent).toBe(firstDamage);
+
+    traffic.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
 });
+
+function predictiveCar(
+  id: number,
+  x: number,
+  z: number,
+  velocityX: number,
+  velocityZ: number,
+): TrafficCar {
+  return {
+    id,
+    mesh: { position: { x, z }, rotation: { y: 0 } },
+    getVelocityX: () => velocityX,
+    getVelocityZ: () => velocityZ,
+  } as unknown as TrafficCar;
+}

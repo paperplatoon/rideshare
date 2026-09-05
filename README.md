@@ -52,13 +52,17 @@ Major tuning values live in `src/game/config.ts`, including upgrade costs, missi
 
 Append `?debug=1` to the local URL to show performance metrics and progression controls for money, car ownership, equipped vehicle, upgrade levels, and save reset.
 
-Police cars observe speeding, wrong-way driving, and sidewalk use through configurable forward and rear vision cones. Sustained observed violations trigger an immediate fine and a citation that must be acknowledged before driving resumes. Police vision cones are visible by default in debug mode and can be toggled from the progression panel.
+Police cars observe speeding, wrong-way driving, sidewalk use, and collisions through configurable sightlines. Confirmed violations and direct collisions trigger a pursuit. Pursuing officers route toward the player's predicted position, transition to a stable trailing target at close range, match speed, swerve within the roadway around traffic, and brake when no safe corridor is available. Remaining within capture range builds the bust meter at any speed. Pursuits lasting more than 30 seconds add a resisting-arrest surcharge that increases every 45 seconds until the player escapes or is caught.
+
+Traffic collisions are tracked as discrete contacts so sustained overlap does not repeatedly apply damage. After serious player-involved crashes, civilian and non-pursuing police traffic brake, back clear when necessary, pull to the right curb, and remain stopped until recycled offscreen. Active pursuing officers instead stabilize and continue with collision damage.
+
+Nearby traffic uses a lightweight closest-approach prediction to yield before rear-end, crossing, and head-on conflicts. One deterministic car yields for each conflict episode. One conflict in every 2,000 on average intentionally uses only light braking, allowing occasional ambient NPC crashes. NPC-only crashes stop briefly and then resume; player-involved crashes retain the full pull-over response.
 
 ## Known Limitations
 
 - Vehicle movement uses a lightweight tire-grip model rather than full rigid-body wheel physics.
 - Controller input is not implemented yet; the driving input values are analog-ready.
-- Traffic uses waypoint following with minimal avoidance.
-- Police issue citations immediately; pursuit, chase, and pull-over behavior is not implemented yet.
+- Traffic uses waypoint following with lightweight local avoidance.
+- Police pursuits use lightweight road-corridor steering rather than a full vehicle path planner.
 - Visuals are prototype geometry and flat colors.
 - No mobile controls, audio, controller support, or multiplayer.

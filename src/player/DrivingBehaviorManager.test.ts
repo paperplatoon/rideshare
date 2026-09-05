@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GAME_CONFIG } from "../game/config";
-import type { BoxCollider } from "../game/types";
+import type { BoxCollider, RoadDefinition } from "../game/types";
 import { WorldQuery } from "../world/WorldQuery";
 import {
   DrivingBehaviorManager,
@@ -10,7 +10,22 @@ import {
 import type { PlayerCar } from "./PlayerCar";
 
 function createQuery(legalDrivingAreas: BoxCollider[] = []): WorldQuery {
-  return new WorldQuery([], [0, 120, 240], [0, 120, 240], 20, 22, 64, legalDrivingAreas);
+  const roads: RoadDefinition[] = [];
+  for (const [axis, prefix] of [["northSouth", "ns"], ["eastWest", "ew"]] as const) {
+    for (let index = 0; index < 3; index++) {
+      const highway = axis === "northSouth" && index === 1;
+      roads.push({
+        id: `${prefix}-${index}`,
+        axis,
+        index,
+        center: index * 120,
+        type: highway ? "highway" : "city",
+        speedLimitMph: highway ? 70 : 60,
+        allowsMissionStops: !highway,
+      });
+    }
+  }
+  return new WorldQuery([], roads, 20, 22, 64, legalDrivingAreas);
 }
 
 function northbound(overrides: Partial<DrivingBehaviorSample> = {}): DrivingBehaviorSample {
@@ -63,14 +78,17 @@ describe("DrivingBehaviorManager", () => {
     expect(service.sidewalk).toBe(0);
   });
 
-  it("uses the configured speed limit, tolerance, and full-severity speed", () => {
+  it("uses each road's speed limit with configured tolerance and severity range", () => {
     const query = createQuery();
-    const speedingStarts = GAME_CONFIG.drivingRules.speedLimitMph + GAME_CONFIG.drivingRules.speedToleranceMph;
-    const midpoint = (speedingStarts + GAME_CONFIG.drivingRules.fullSpeedingMph) / 2;
+    const cityLimit = GAME_CONFIG.world.roadTypes.city.speedLimitMph;
+    const speedingStarts = cityLimit + GAME_CONFIG.drivingRules.speedToleranceMph;
+    const fullSpeedingMph = cityLimit + GAME_CONFIG.drivingRules.fullSpeedingOverLimitMph;
+    const midpoint = (speedingStarts + fullSpeedingMph) / 2;
 
     expect(evaluateDrivingViolations(northbound({ speedMph: speedingStarts }), query).speeding).toBe(0);
     expect(evaluateDrivingViolations(northbound({ speedMph: midpoint }), query).speeding).toBeCloseTo(0.5);
-    expect(evaluateDrivingViolations(northbound({ speedMph: GAME_CONFIG.drivingRules.fullSpeedingMph }), query).speeding).toBe(1);
+    expect(evaluateDrivingViolations(northbound({ speedMph: fullSpeedingMph }), query).speeding).toBe(1);
+    expect(evaluateDrivingViolations(northbound({ x: 110, speedMph: 70 }), query).speeding).toBe(0);
   });
 
   it("accumulates weighted points consistently across fixed-step subdivisions", () => {
