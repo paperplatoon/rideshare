@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GAME_CONFIG } from "../game/config";
 import type { BoxCollider, RoadDefinition, RoadTypeId } from "../game/types";
 import { WorldQuery } from "./WorldQuery";
 
@@ -53,7 +54,8 @@ describe("WorldQuery", () => {
     const query = createQuery([], [{ x: 30, z: 60, halfX: 6, halfZ: 6 }]);
 
     const road = query.getRoadContext(10, 60, 0, -10);
-    const turnApproach = query.getRoadContext(10, 30, 0, -10);
+    const turningGapZ = 20 + GAME_CONFIG.world.roadMarkings.intersectionBuffer - 1;
+    const turnApproach = query.getRoadContext(10, turningGapZ, 0, -10);
 
     expect(road.axis).toBe("northSouth");
     expect(road.road.id).toBe("ns-0");

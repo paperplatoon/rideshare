@@ -29,14 +29,22 @@ describe("MapProjection", () => {
     );
     const projected = roadCenters.map((center) => projectMapPoint(center, 0, bounds).x);
 
-    expect(projected).toHaveLength(11);
-    expect(projected[0]).toBeCloseTo(1.1628, 3);
-    expect(projected[1] - projected[0]).toBeCloseTo(9.7674, 3);
-    expect(projected.at(-1)).toBeCloseTo(98.8372, 3);
+    const edgeInsetPercent = GAME_CONFIG.world.roadWidth / 2 / totalX * 100;
+    const roadSpacingPercent = (GAME_CONFIG.world.blockSize + GAME_CONFIG.world.roadWidth) / totalX * 100;
+    expect(projected).toHaveLength(GAME_CONFIG.world.blocksX + 1);
+    expect(projected[0]).toBeCloseTo(edgeInsetPercent, 3);
+    expect(projected[1] - projected[0]).toBeCloseTo(roadSpacingPercent, 3);
+    expect(projected.at(-1)).toBeCloseTo(100 - edgeInsetPercent, 3);
   });
 
   it("scales road width independently on each map axis", () => {
-    expect(projectMapWidth(GAME_CONFIG.world.roadWidth, bounds)).toBeCloseTo(2.3256, 3);
-    expect(projectMapHeight(GAME_CONFIG.world.roadWidth, bounds)).toBeCloseTo(2.3256, 3);
+    expect(projectMapWidth(GAME_CONFIG.world.roadWidth, bounds)).toBeCloseTo(
+      GAME_CONFIG.world.roadWidth / totalX * 100,
+      3,
+    );
+    expect(projectMapHeight(GAME_CONFIG.world.roadWidth, bounds)).toBeCloseTo(
+      GAME_CONFIG.world.roadWidth / totalZ * 100,
+      3,
+    );
   });
 });

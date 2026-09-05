@@ -32,7 +32,12 @@ describe("TownGenerator", () => {
       - Math.min(...services.map(({ position }) => position.z))).toBeGreaterThan((town.maxZ - town.minZ) * 0.7);
     expect(town.meshes.some((mesh) => mesh.name === "center-lines")).toBe(true);
     const highwayRoads = town.roads.filter((road) => road.type === "highway");
-    expect(highwayRoads.map((road) => road.id).sort()).toEqual(["ew-0", "ew-10", "ns-0", "ns-10"]);
+    expect(highwayRoads.map((road) => road.id).sort()).toEqual([
+      "ew-0",
+      `ew-${GAME_CONFIG.world.blocksZ}`,
+      "ns-0",
+      `ns-${GAME_CONFIG.world.blocksX}`,
+    ]);
     expect(highwayRoads.every((road) => road.speedLimitMph === 70 && !road.allowsMissionStops)).toBe(true);
     const roadsById = new Map(town.roads.map((road) => [road.id, road]));
     expect(town.deliveryPoints.length).toBeGreaterThan(0);

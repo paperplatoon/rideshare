@@ -7,10 +7,10 @@ export const GAME_CONFIG = {
   },
   world: {
     // World-space distances use engine units. Offer distances convert these units to meters below.
-    blocksX: 10,
-    blocksZ: 10,
+    blocksX: 7,
+    blocksZ: 7,
     // Increase for larger city blocks and longer drives; decrease for a tighter, more compact street grid.
-    blockSize: 240,
+    blockSize: 360,
     roadWidth: 75,
     sidewalkWidth: 3,
     // Increase to move the invisible city boundary farther from the playable area; decrease to make the boundary tighter.
@@ -191,7 +191,7 @@ export const GAME_CONFIG = {
   },
   traffic: {
     // Increase for more NPC cars and a busier city; decrease for fewer cars and less simulation/rendering work.
-    vehicleCount: 120,
+    vehicleCount: 90,
     // NPC body and collision dimensions are local width (side-to-side/X) and length (front-to-back/Z).
     vehicleWidth: 5.4,
     vehicleLength: 9.4,
@@ -276,6 +276,20 @@ export const GAME_CONFIG = {
     // Distance from each road centerline to the center of its directional lane.
     // Increase to place NPCs farther from the center line; decrease to keep them closer to it.
     laneOffset: 18.75,
+  },
+  trafficSignals: {
+    // Increase for longer green-light periods and longer queues on the crossing road; decrease for more frequent changes.
+    greenSeconds: 12,
+    // Increase to give nearby cars more time to clear a yellow light; decrease for a quicker change to red.
+    yellowSeconds: 2,
+    // Increase for a longer safety pause when every direction is red; decrease for faster switching between road directions.
+    allRedSeconds: 1,
+    // Increase to place stop lines farther back from intersections; decrease to let cars stop closer to the corner.
+    stopLineSetback: 3,
+    // Increase so cars begin considering red lights from farther away; decrease for later, more abrupt reactions.
+    lookAheadDistance: 120,
+    // Increase to make cars more likely to stop for yellow; decrease to let more nearby cars continue through.
+    yellowStoppingBuffer: 2,
   },
   drivingRules: {
     // Increase to forgive more speeding before counting it; decrease to start speeding penalties sooner.

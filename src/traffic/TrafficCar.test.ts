@@ -11,6 +11,7 @@ import {
   createTrafficTurnPath,
   createTrafficUTurnPath,
   shouldStartPursuitUTurn,
+  trafficSignalSpeedLimit,
   TrafficCar,
 } from "./TrafficCar";
 
@@ -60,6 +61,56 @@ function createCarFixture(
 }
 
 describe("TrafficCar", () => {
+  it("calculates safe red-light braking and commits through a yellow when too close to stop", () => {
+    const stopCenterDistance = GAME_CONFIG.world.roadWidth / 2
+      + GAME_CONFIG.trafficSignals.stopLineSetback
+      + GAME_CONFIG.traffic.hitboxLength / 2;
+    const farDistance = stopCenterDistance + 50;
+    const closeDistance = stopCenterDistance + 4;
+
+    expect(trafficSignalSpeedLimit("green", 30, farDistance)).toBeNull();
+    expect(trafficSignalSpeedLimit("red", 30, stopCenterDistance)).toBe(0);
+    expect(trafficSignalSpeedLimit("red", 30, farDistance)).toBeCloseTo(
+      Math.sqrt(2 * GAME_CONFIG.traffic.braking * 50),
+    );
+    expect(trafficSignalSpeedLimit("yellow", 20, farDistance)).not.toBeNull();
+    expect(trafficSignalSpeedLimit("yellow", 20, closeDistance)).toBeNull();
+    expect(trafficSignalSpeedLimit("red", 20, GAME_CONFIG.world.roadWidth / 2 - 1)).toBeNull();
+  });
+
+  it("stops at a red signal, queues a following car, and resumes on green", () => {
+    const leaderFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    const followerFixture = createCarFixture(GAME_CONFIG.traffic.maxSpeed);
+    const leader = leaderFixture.car;
+    const follower = followerFixture.car;
+    const stopCenterDistance = GAME_CONFIG.world.roadWidth / 2
+      + GAME_CONFIG.trafficSignals.stopLineSetback
+      + GAME_CONFIG.traffic.hitboxLength / 2;
+    const intersectionX = leader.target.position.x;
+    leader.mesh.position.x = intersectionX - stopCenterDistance - 80;
+    follower.mesh.position.x = leader.mesh.position.x - 35;
+    follower.mesh.position.z = leader.mesh.position.z;
+
+    for (let frame = 0; frame < 600; frame++) {
+      leader.update(1 / 60, [], "red");
+      follower.update(1 / 60, [leader], "green");
+    }
+
+    expect(leader.speed).toBeLessThan(0.1);
+    expect(intersectionX - leader.mesh.position.x).toBeGreaterThanOrEqual(stopCenterDistance - 0.5);
+    expect(follower.speed).toBeLessThan(0.25);
+    expect(leader.mesh.position.x - follower.mesh.position.x).toBeGreaterThanOrEqual(
+      GAME_CONFIG.traffic.hitboxLength + GAME_CONFIG.traffic.minimumFollowingGap - 0.5,
+    );
+
+    const stoppedX = leader.mesh.position.x;
+    for (let frame = 0; frame < 60; frame++) leader.update(1 / 60, [], "green");
+    expect(leader.mesh.position.x).toBeGreaterThan(stoppedX);
+
+    leaderFixture.dispose();
+    followerFixture.dispose();
+  });
+
   it("selects the road direction that closes on the pursuit target, including reverse", () => {
     const roads = [0, 1000, 2000];
     const intersection: TrafficWaypoint = { position: new Vector3(1000, 1, 1000), ix: 1, iz: 1 };
@@ -201,13 +252,21 @@ describe("TrafficCar", () => {
     lightFixture.dispose();
   });
 
-  it("uses pursuit acceleration and a fixed pursuit speed target for police", () => {
+  it("makes patrol police obey red lights while pursuing police ignore them", () => {
     const fixture = createCarFixture(GAME_CONFIG.traffic.minSpeed, () => 0.25, "police");
     const { car } = fixture;
+    const stopCenterDistance = GAME_CONFIG.world.roadWidth / 2
+      + GAME_CONFIG.trafficSignals.stopLineSetback
+      + GAME_CONFIG.traffic.hitboxLength / 2;
+    car.mesh.position.x = car.target.position.x - stopCenterDistance;
     const previousSpeed = car.speed;
 
+    car.update(0.1, [], "red");
+    expect(car.speed).toBeCloseTo(previousSpeed - GAME_CONFIG.traffic.braking * 0.1);
+
+    car.speed = previousSpeed;
     car.setPursuitTarget({ x: 2000, z: 1000 });
-    car.update(0.1, []);
+    car.update(0.1, [], "red");
 
     expect(car.isPursuing).toBe(true);
     expect(car.speed).toBeCloseTo(previousSpeed + GAME_CONFIG.police.pursuitAcceleration * 0.1);

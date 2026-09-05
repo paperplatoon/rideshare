@@ -69,7 +69,8 @@ describe("DrivingBehaviorManager", () => {
     const serviceArea = { x: 30, z: 60, halfX: 8, halfZ: 8 };
     const query = createQuery([serviceArea]);
     const intersection = evaluateDrivingViolations(northbound({ x: 10, z: 0 }), query);
-    const turningGap = evaluateDrivingViolations(northbound({ x: 10, z: 30 }), query);
+    const turningGapZ = 20 + GAME_CONFIG.world.roadMarkings.intersectionBuffer - 1;
+    const turningGap = evaluateDrivingViolations(northbound({ x: 10, z: turningGapZ }), query);
     const service = evaluateDrivingViolations(northbound({ x: 30 }), query);
 
     expect(intersection.wrongSide).toBe(0);

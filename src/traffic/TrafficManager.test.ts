@@ -46,9 +46,11 @@ describe("TrafficManager", () => {
 
     traffic.update(1 / 60, player);
 
-    expect(traffic.cars).toHaveLength(120);
+    expect(traffic.cars).toHaveLength(GAME_CONFIG.traffic.vehicleCount);
     expect(traffic.policeCars).toHaveLength(GAME_CONFIG.police.vehicleCount);
-    expect(traffic.cars.filter((car) => car.role === "civilian")).toHaveLength(120 - GAME_CONFIG.police.vehicleCount);
+    expect(traffic.cars.filter((car) => car.role === "civilian")).toHaveLength(
+      GAME_CONFIG.traffic.vehicleCount - GAME_CONFIG.police.vehicleCount,
+    );
     expect(traffic.activeCarCount).toBeGreaterThan(0);
     expect(traffic.activeCarCount).toBeLessThan(traffic.cars.length);
     expect(traffic.cars[0].mesh.geometry).toBe(traffic.cars[4].mesh.geometry);

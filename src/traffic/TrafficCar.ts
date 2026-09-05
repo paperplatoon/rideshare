@@ -6,6 +6,7 @@ import { GAME_CONFIG } from "../game/config";
 import type { TrafficVehicleRole, TrafficWaypoint } from "../game/types";
 import { clamp, lerp, normalizeAngle, randomBetween } from "../utils/math";
 import { createLowPolyVehicleMesh } from "../vehicles/VehicleMeshFactory";
+import type { TrafficSignalAspect } from "./TrafficSignalController";
 
 type Direction = "north" | "south" | "east" | "west";
 
@@ -165,6 +166,31 @@ export function shouldStartPursuitUTurn(
   return forwardCost - reverseCost >= GAME_CONFIG.police.pursuitUTurnRequiredRouteSavings;
 }
 
+export function trafficSignalSpeedLimit(
+  aspect: TrafficSignalAspect,
+  speed: number,
+  distanceToIntersection: number,
+): number | null {
+  if (aspect === "green") return null;
+  const intersectionHalfWidth = GAME_CONFIG.world.roadWidth / 2;
+  if (distanceToIntersection <= intersectionHalfWidth) return null;
+
+  const stopCenterDistance = intersectionHalfWidth
+    + GAME_CONFIG.trafficSignals.stopLineSetback
+    + GAME_CONFIG.traffic.hitboxLength / 2;
+  const availableStoppingDistance = Math.max(0, distanceToIntersection - stopCenterDistance);
+  if (availableStoppingDistance > GAME_CONFIG.trafficSignals.lookAheadDistance) return null;
+
+  if (aspect === "yellow") {
+    const stoppingDistance = speed * speed / (2 * GAME_CONFIG.traffic.braking);
+    if (availableStoppingDistance <= stoppingDistance + GAME_CONFIG.trafficSignals.yellowStoppingBuffer) {
+      return null;
+    }
+  }
+
+  return Math.sqrt(2 * GAME_CONFIG.traffic.braking * availableStoppingDistance);
+}
+
 export class TrafficCar {
   readonly mesh: Mesh;
   respawnGeneration = 0;
@@ -219,7 +245,11 @@ export class TrafficCar {
     this.respawn(waypoint, direction, spawnProgress);
   }
 
-  update(deltaTime: number, nearbyTraffic: TrafficCar[]): void {
+  update(
+    deltaTime: number,
+    nearbyTraffic: TrafficCar[],
+    signalAspect: TrafficSignalAspect = "green",
+  ): void {
     this.pursuitUTurnCooldown = Math.max(0, this.pursuitUTurnCooldown - deltaTime);
     this.pursuitAvoidanceTimeRemaining = Math.max(0, this.pursuitAvoidanceTimeRemaining - deltaTime);
     this.accidentStateTimeRemaining = Math.max(0, this.accidentStateTimeRemaining - deltaTime);
@@ -302,7 +332,7 @@ export class TrafficCar {
 
     const dirX = dx / distance;
     const dirZ = dz / distance;
-    let desiredSpeed = this.desiredSpeed(distance, dirX, dirZ, nearbyTraffic);
+    let desiredSpeed = this.desiredSpeed(distance, dirX, dirZ, nearbyTraffic, signalAspect);
     if (this.accidentStateValue === "braking" || this.accidentStateValue === "pursuitRecovery") {
       desiredSpeed = 0;
     }
@@ -982,7 +1012,13 @@ export class TrafficCar {
     return lerp(1, multiplierAtMaxDamage, this.damagePercentValue);
   }
 
-  private desiredSpeed(distanceToTarget: number, forwardX: number, forwardZ: number, traffic: TrafficCar[]): number {
+  private desiredSpeed(
+    distanceToTarget: number,
+    forwardX: number,
+    forwardZ: number,
+    traffic: TrafficCar[],
+    signalAspect: TrafficSignalAspect,
+  ): number {
     let cruisingSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitSpeed : this.cruiseSpeed;
     let turnSpeed = this.pursuitTarget ? GAME_CONFIG.police.pursuitTurnSpeed : GAME_CONFIG.traffic.turnSpeed;
     if (this.pursuitTarget) {
@@ -1027,6 +1063,11 @@ export class TrafficCar {
         targetSpeed,
         lerp(cruisingSpeed, turnSpeed, clamp(turnAmount, 0, 1)),
       );
+    }
+
+    if (!this.pursuitTarget && !this.completingTurn) {
+      const signalLimit = trafficSignalSpeedLimit(signalAspect, this.speed, distanceToTarget);
+      if (signalLimit !== null) targetSpeed = Math.min(targetSpeed, signalLimit);
     }
 
     if (this.safetyBrakeMode === "hard") {

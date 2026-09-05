@@ -6,6 +6,7 @@ import { GAME_CONFIG } from "../game/config";
 import type { TrafficCollisionInfo, TrafficWaypoint } from "../game/types";
 import { seededRandom } from "../utils/math";
 import { TrafficCar, type Direction } from "./TrafficCar";
+import { TrafficSignalController } from "./TrafficSignalController";
 import type { PlayerCar } from "../player/PlayerCar";
 import { collisionDamagePercent } from "../player/DamageManager";
 import { findOrientedBoxCollision } from "./OrientedBoxCollision";
@@ -18,6 +19,7 @@ interface SafetyConflictDecision {
 export class TrafficManager {
   readonly cars: TrafficCar[] = [];
   readonly policeCars: TrafficCar[] = [];
+  readonly trafficSignals: TrafficSignalController;
   activeCarCount = 0;
   lastCollisionCandidateCount = 0;
   private readonly rng = seededRandom(3777);
@@ -46,6 +48,7 @@ export class TrafficManager {
     private readonly roadPositionsX: number[],
     private readonly roadPositionsZ: number[],
   ) {
+    this.trafficSignals = new TrafficSignalController(scene, roadPositionsX, roadPositionsZ);
     this.materials = [
       this.material(scene, "traffic-red", new Color3(0.76, 0.18, 0.14)),
       this.material(scene, "traffic-blue", new Color3(0.12, 0.36, 0.72)),
@@ -92,6 +95,7 @@ export class TrafficManager {
   }
 
   update(deltaTime: number, player: PlayerCar): TrafficCollisionInfo {
+    this.trafficSignals.update(deltaTime);
     for (let index = 0; index < this.damageCooldownByCar.length; index++) {
       this.damageCooldownByCar[index] = Math.max(0, this.damageCooldownByCar[index] - deltaTime);
     }
@@ -104,7 +108,7 @@ export class TrafficManager {
       const car = this.cars[index];
       const nearby = this.nearbyByCar[index];
       this.queryNearby(car.mesh.position.x, car.mesh.position.z, GAME_CONFIG.traffic.lookAheadDistance, nearby);
-      car.update(updateDelta, nearby);
+      car.update(updateDelta, nearby, this.trafficSignals.aspectFor(car.direction));
     }
     for (const car of this.cars) car.beginCollisionFrame();
     this.currentContacts.clear();
@@ -117,6 +121,7 @@ export class TrafficManager {
   }
 
   dispose(): void {
+    this.trafficSignals.dispose();
     for (const car of this.cars) {
       car.dispose();
     }
@@ -437,6 +442,12 @@ export class TrafficManager {
       const direction = this.pickValidDirection(waypoint, this.roadPositionsX.length, this.roadPositionsZ.length);
       const progress = ((carIndex % 5) + 1) / 6;
       car.respawn(waypoint, direction, progress);
+      const spawnedDx = car.mesh.position.x - player.root.position.x;
+      const spawnedDz = car.mesh.position.z - player.root.position.z;
+      const spawnedDistanceSquared = spawnedDx * spawnedDx + spawnedDz * spawnedDz;
+      if (spawnedDistanceSquared < minDistanceSquared || spawnedDistanceSquared > maxDistanceSquared) {
+        car.respawn(waypoint, direction, 0);
+      }
       this.updateAccumulatorByCar[carIndex] = 0;
       return;
     }
