@@ -9,6 +9,16 @@ import { createLowPolyVehicleMesh } from "../vehicles/VehicleMeshFactory";
 import type { TrafficSignalAspect } from "./TrafficSignalController";
 
 type Direction = "north" | "south" | "east" | "west";
+export type TurnSignal = "off" | "left" | "right";
+
+export function turnSignalForDirections(incoming: Direction, outgoing: Direction): TurnSignal {
+  if (incoming === outgoing) return "off";
+  const a = directionVector(incoming);
+  const b = directionVector(outgoing);
+  // The existing U-turn arc crosses toward the opposing lane on the left.
+  // Babylon's left-handed scene uses local +X as the driver's right.
+  return a.x * b.z - a.z * b.x < 0 ? "right" : "left";
+}
 
 export interface TrafficPosition {
   x: number;
@@ -201,6 +211,8 @@ export class TrafficCar {
   private velocityX = 0;
   private velocityZ = 0;
   private completingTurn = false;
+  private signalIntent: TurnSignal = "off";
+  private turningSignal: TurnSignal = "off";
   private plannedDirection: Direction;
   private readonly turnTargets: TrafficWaypoint[] = [];
   private cruiseSpeed: number;
@@ -250,6 +262,7 @@ export class TrafficCar {
     nearbyTraffic: TrafficCar[],
     signalAspect: TrafficSignalAspect = "green",
   ): void {
+    this.refreshTurnSignal();
     this.pursuitUTurnCooldown = Math.max(0, this.pursuitUTurnCooldown - deltaTime);
     this.pursuitAvoidanceTimeRemaining = Math.max(0, this.pursuitAvoidanceTimeRemaining - deltaTime);
     this.accidentStateTimeRemaining = Math.max(0, this.accidentStateTimeRemaining - deltaTime);
@@ -394,6 +407,28 @@ export class TrafficCar {
     return this.completingTurn;
   }
 
+  get turnSignal(): TurnSignal {
+    return this.signalIntent;
+  }
+
+  refreshTurnSignal(): void {
+    if (this.isPursuing || this.accidentStateValue !== "driving") {
+      this.signalIntent = "off";
+    } else if (this.completingTurn) {
+      this.signalIntent = this.turningSignal;
+    } else {
+      const intended = turnSignalForDirections(this.direction, this.plannedDirection);
+      const config = GAME_CONFIG.traffic.turnSignals;
+      const entryDistance = Math.hypot(
+        this.target.position.x - this.mesh.position.x,
+        this.target.position.z - this.mesh.position.z,
+      ) - GAME_CONFIG.traffic.turnCurveRadius;
+      const threshold = clamp(this.cruiseSpeed * config.leadSeconds, config.minimumDistance, config.maximumDistance);
+      this.signalIntent = intended !== "off" && (this.signalIntent === intended || entryDistance <= threshold)
+        ? intended : "off";
+    }
+  }
+
   get isPursuing(): boolean {
     return this.pursuitTarget !== null;
   }
@@ -424,6 +459,7 @@ export class TrafficCar {
     serious: boolean,
     pullOverAfterSerious = true,
   ): void {
+    this.signalIntent = "off";
     this.damagePercentValue = clamp(this.damagePercentValue + Math.max(0, damagePercent), 0, 1);
     this.speed *= GAME_CONFIG.player.collisionSpeedLoss;
     this.accidentPartnerId = otherId;
@@ -451,6 +487,7 @@ export class TrafficCar {
 
   setPursuitTarget(target: TrafficPursuitTarget): void {
     if (this.role !== "police") return;
+    this.signalIntent = "off";
     const wasPursuing = this.pursuitTarget !== null;
     this.pursuitTarget = {
       x: target.x,
@@ -512,6 +549,8 @@ export class TrafficCar {
   }
 
   respawn(waypoint: TrafficWaypoint, direction: Direction, progress: number): void {
+    this.signalIntent = "off";
+    this.turningSignal = "off";
     this.respawnGeneration += 1;
     this.waypoint = this.laneWaypoint(waypoint, direction);
     this.direction = direction;
@@ -635,6 +674,8 @@ export class TrafficCar {
     }
     if (this.completingTurn) {
       this.completingTurn = false;
+      this.signalIntent = "off";
+      this.turningSignal = "off";
       this.target = this.nextWaypoint();
       this.plannedDirection = this.chooseDirectionAt(this.target);
       return;
@@ -657,6 +698,7 @@ export class TrafficCar {
   }
 
   private beginUTurn(previousDirection: Direction, routeWaypoint: TrafficWaypoint): void {
+    this.turningSignal = turnSignalForDirections(previousDirection, oppositeDirection(previousDirection));
     this.pursuitUTurnRequested = false;
     if (this.pursuitTarget) {
       this.pursuitUTurnCooldown = GAME_CONFIG.police.pursuitUTurnCooldownSeconds;
@@ -692,6 +734,7 @@ export class TrafficCar {
   }
 
   private beginTurn(previousDirection: Direction, intersectionWaypoint: TrafficWaypoint): void {
+    this.turningSignal = turnSignalForDirections(previousDirection, this.plannedDirection);
     this.direction = this.plannedDirection;
     const intersection = new Vector3(
       this.roadPositionsX[intersectionWaypoint.ix],

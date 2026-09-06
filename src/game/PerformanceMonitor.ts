@@ -1,3 +1,5 @@
+import { FrameTimingWindow } from "./FrameTimingWindow";
+import { GAME_CONFIG } from "./config";
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { SceneInstrumentation } from "@babylonjs/core/Instrumentation/sceneInstrumentation";
 import type { Scene } from "@babylonjs/core/scene";
@@ -8,6 +10,8 @@ export class PerformanceMonitor {
   private readonly element: HTMLDivElement | null;
   private instrumentation: SceneInstrumentation | null = null;
   private scene: Scene;
+  private readonly frameTimings = new FrameTimingWindow(GAME_CONFIG.graphics.performanceSampleCount);
+  private startupMilliseconds = 0;
   private updateStartedAt = 0;
   private updateMilliseconds = 0;
   private lastDisplayUpdate = 0;
@@ -28,6 +32,7 @@ export class PerformanceMonitor {
   attachScene(scene: Scene): void {
     this.scene = scene;
     this.instrumentation?.dispose();
+    this.frameTimings.clear();
     if (!this.enabled) {
       return;
     }
@@ -36,6 +41,8 @@ export class PerformanceMonitor {
     this.instrumentation.captureRenderTime = true;
     this.instrumentation.captureActiveMeshesEvaluationTime = true;
   }
+
+  setStartupMilliseconds(value: number): void { this.startupMilliseconds = value; }
 
   beginUpdate(): void {
     if (this.enabled) {
@@ -54,6 +61,7 @@ export class PerformanceMonitor {
     if (!this.element || !this.instrumentation) {
       return;
     }
+    this.frameTimings.add(this.engine.getDeltaTime());
     const now = performance.now();
     if (now - this.lastDisplayUpdate < 500) {
       return;
@@ -67,10 +75,13 @@ export class PerformanceMonitor {
       visibleVertices += mesh.getTotalVertices();
       visibleTriangles += Math.floor(mesh.getTotalIndices() / 3);
     }
+    const timing = this.frameTimings.summarize();
     const lines = [
-      `${this.engine.getFps().toFixed(0)} FPS`,
+      `${this.engine.getFps().toFixed(0)} FPS · ${this.scene.metadata?.graphicsMode ?? GAME_CONFIG.graphics.defaultMode}`,
+      `${timing.median.toFixed(2)} ms median / ${timing.p95.toFixed(2)} ms p95 (${timing.samples} frames)`,
+      `${this.startupMilliseconds.toFixed(0)} ms startup`,
       `${this.updateMilliseconds.toFixed(2)} ms update`,
-      `${this.instrumentation.renderTimeCounter.lastSecAverage.toFixed(2)} ms render`,
+      `${this.instrumentation.renderTimeCounter.lastSecAverage.toFixed(2)} ms CPU render (not GPU)`,
       `${this.instrumentation.drawCallsCounter.current} draw calls`,
       `${this.scene.getActiveMeshes().length}/${this.scene.meshes.length} meshes`,
       `${formatCount(visibleTriangles)} triangles / ${formatCount(visibleVertices)} vertices`,

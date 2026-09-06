@@ -1,3 +1,5 @@
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { hasEnhancedGraphics, resolveGraphicsMode, setSceneGraphicsMode } from "../graphics/GraphicsMode";
 import { PassengerDrivingEvents } from "../player/PassengerDrivingEvents";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
@@ -65,6 +67,7 @@ export class Game {
     private readonly canvas: HTMLCanvasElement,
     uiRoot: HTMLDivElement,
   ) {
+    const startupStarted = performance.now();
     this.scene = this.createScene();
     this.ui = new GameUI(uiRoot, {
       start: () => this.startShift(),
@@ -87,6 +90,7 @@ export class Game {
     this.performanceMonitor = new PerformanceMonitor(engine, this.scene, uiRoot);
     this.buildSimulation();
     this.ui.showStart();
+    this.performanceMonitor.setStartupMilliseconds(performance.now() - startupStarted);
   }
 
   startRenderLoop(): void {
@@ -509,13 +513,20 @@ export class Game {
 
   private createScene(): Scene {
     const scene = new Scene(this.engine);
+    setSceneGraphicsMode(scene, resolveGraphicsMode());
     scene.clearColor.set(0.55, 0.72, 0.86, 1);
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogStart = GAME_CONFIG.graphics.fogStart;
     scene.fogEnd = GAME_CONFIG.graphics.fogEnd;
     scene.fogColor = new Color3(0.55, 0.72, 0.86);
     const light = new HemisphericLight("main-light", new Vector3(0.4, 1, 0.3), scene);
-    light.intensity = 0.92;
+    light.intensity = hasEnhancedGraphics(scene) ? GAME_CONFIG.graphics.ambientIntensity : 0.92;
+    if (hasEnhancedGraphics(scene)) {
+      const sun = new DirectionalLight("sunlight", new Vector3(...GAME_CONFIG.graphics.sunlightDirection), scene);
+      sun.intensity = GAME_CONFIG.graphics.sunlightIntensity;
+      sun.diffuse = new Color3(1, 0.96, 0.88);
+      sun.specular = new Color3(0.5, 0.48, 0.44);
+    }
     light.groundColor = new Color3(0.32, 0.34, 0.34);
 
     const previewCamera = new ArcRotateCamera("preview-camera", Math.PI * 0.25, Math.PI * 0.35, 850, Vector3.Zero(), scene);

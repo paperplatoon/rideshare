@@ -7,6 +7,7 @@ import type { TrafficCollisionInfo, TrafficWaypoint } from "../game/types";
 import { seededRandom } from "../utils/math";
 import { TrafficCar, type Direction } from "./TrafficCar";
 import { TrafficSignalController } from "./TrafficSignalController";
+import { TrafficTurnSignals } from "./TrafficTurnSignals";
 import type { PlayerCar } from "../player/PlayerCar";
 import { collisionDamagePercent } from "../player/DamageManager";
 import { findOrientedBoxCollision } from "./OrientedBoxCollision";
@@ -20,6 +21,7 @@ export class TrafficManager {
   readonly cars: TrafficCar[] = [];
   readonly policeCars: TrafficCar[] = [];
   readonly trafficSignals: TrafficSignalController;
+  private readonly turnSignals: TrafficTurnSignals;
   activeCarCount = 0;
   lastCollisionCandidateCount = 0;
   private readonly rng = seededRandom(3777);
@@ -92,6 +94,7 @@ export class TrafficManager {
       this.fullSimulationByCar.push(false);
       this.damageCooldownByCar.push(0);
     }
+    this.turnSignals = new TrafficTurnSignals(scene, this.cars);
   }
 
   update(deltaTime: number, player: PlayerCar): TrafficCollisionInfo {
@@ -117,10 +120,12 @@ export class TrafficManager {
     this.resolveTrafficCollisions();
     this.previousContacts.clear();
     for (const contact of this.currentContacts) this.previousContacts.add(contact);
+    this.turnSignals.update(deltaTime);
     return collisionInfo;
   }
 
   dispose(): void {
+    this.turnSignals.dispose();
     this.trafficSignals.dispose();
     for (const car of this.cars) {
       car.dispose();

@@ -46,6 +46,13 @@ export const GAME_CONFIG = {
       minimumSpacing: 150,
       // Increase to leave more room between service buildings and nearby buildings; decrease to fit more locations.
       buildingClearance: 2,
+      // Increase to widen the colored gas-station approach lane; decrease to keep more of the block built up.
+      gasStationDrivewayWidth: 28,
+      // Increase to make the curved street aprons easier to enter; decrease for tighter entrances.
+      gasStationApronRadius: 24,
+      // Increase to extend the legal station corridor farther from the pumps; decrease for stricter boundaries.
+      // Covers the station pad plus both rounded inlet ends along the road.
+      gasStationLegalHalfWidth: 52,
     },
     buildings: {
       // Increase to make building lots larger and reduce their count; decrease to create more, smaller lots.
@@ -176,12 +183,37 @@ export const GAME_CONFIG = {
     maxFov: 0.98,
   },
   graphics: {
+    // Choose enhanced for improved models and sunlight, or original for the prior rendering.
+    defaultMode: "enhanced" as "original" | "enhanced",
+    // Increase for finer facade patterns at greater texture memory/startup cost; decrease for cheaper textures.
+    facadeTextureSize: 256,
+    // Increase for larger floors and windows in world space; decrease for denser facade details.
+    facadeTileWorldSize: 16,
+    // Increase for rounder body corners; decrease for squarer silhouettes.
+    vehicleBodyBevel: 0.22,
+    // Increase for smoother hub and wheel-arch curves; decrease for cheaper small details.
+    vehicleDetailSegments: 8,
+    // Increase to permit more vehicle detail; decrease to enforce simpler generated meshes.
+    playerTriangleBudget: 1500,
+    trafficTriangleBudget: 1000,
+    // Increase to permit more architectural geometry; decrease to enforce simpler buildings.
+    buildingTriangleBudget: 120,
+    // Increase to keep more ambient illumination; decrease for stronger light/dark separation.
+    ambientIntensity: 0.64,
+    // Increase for brighter sun-facing surfaces; decrease for gentler sunlight.
+    sunlightIntensity: 0.55,
+    // X/Z change the sun's compass direction; a more negative Y makes sunlight more overhead.
+    sunlightDirection: [-0.6, -1, 0.45] as readonly [number, number, number],
+    // Increase for longer debug frame history; decrease for a smaller rolling sample window.
+    performanceSampleCount: 3600,
+    // Original wheel detail is retained for developer before/after comparisons.
+    originalWheelTessellation: 10,
     // Increase for sharper procedural textures at a cost to startup memory/work; decrease for blurrier but cheaper textures.
     surfaceTextureSize: 64,
     // Increase for more detailed roofs; decrease for simpler roofs and faster generation.
     buildingRoofDetailChance: 0.72,
     // Increase for smoother-looking wheels and shadows at a small rendering cost; decrease for cheaper, more angular geometry.
-    vehicleWheelTessellation: 10,
+    vehicleWheelTessellation: 16,
     // Increase for smoother vehicle shadows at a small rendering cost; decrease for cheaper, more angular shadows.
     vehicleShadowTessellation: 16,
     // Linear fog starts here: increase to keep more distant scenery clear; decrease to fade it sooner.
@@ -190,6 +222,13 @@ export const GAME_CONFIG = {
     fogEnd: 2200,
   },
   traffic: {
+    turnSignals: {
+      leadSeconds: 4,
+      minimumDistance: 100,
+      maximumDistance: 220,
+      blinkHalfPeriod: 0.4,
+      color: [1, 0.55, 0.015],
+    },
     // Increase for more NPC cars and a busier city; decrease for fewer cars and less simulation/rendering work.
     vehicleCount: 90,
     // NPC body and collision dimensions are local width (side-to-side/X) and length (front-to-back/Z).

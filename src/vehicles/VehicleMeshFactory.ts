@@ -1,3 +1,6 @@
+import { hasEnhancedGraphics } from "../graphics/GraphicsMode";
+import { createEnhancedVehicleMesh } from "./EnhancedVehicleMesh";
+import { TAILLIGHT_COLOR, vehicleLightLayout } from "./VehicleLightLayout";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -24,6 +27,7 @@ export function createLowPolyVehicleMesh(
   material: StandardMaterial,
   options: LowPolyVehicleOptions,
 ): Mesh {
+  if (hasEnhancedGraphics(scene)) return createEnhancedVehicleMesh(scene, name, material, options);
   const { bodyLength: length, bodyWidth: width, bodyHeight: height } = options;
   const parts: Mesh[] = [];
   const glass = new Color3(0.055, 0.11, 0.14);
@@ -69,7 +73,7 @@ export function createLowPolyVehicleMesh(
       const wheel = MeshBuilder.CreateCylinder(`${name}-wheel-${xSign}-${zSign}`, {
         diameter: wheelRadius * 2,
         height: tireWidth,
-        tessellation: GAME_CONFIG.graphics.vehicleWheelTessellation,
+        tessellation: GAME_CONFIG.graphics.originalWheelTessellation,
       }, scene);
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(
@@ -84,16 +88,12 @@ export function createLowPolyVehicleMesh(
   }
 
   for (const xSign of [-1, 1]) {
-    parts.push(coloredBox(scene, `${name}-headlight-${xSign}`, {
-      width: width * 0.22,
-      height: height * 0.15,
-      depth: 0.08,
-    }, new Color3(1, 0.94, 0.68), material, xSign * width * 0.28, height * 0.08, length / 2 - 0.04));
-    parts.push(coloredBox(scene, `${name}-taillight-${xSign}`, {
-      width: width * 0.22,
-      height: height * 0.14,
-      depth: 0.08,
-    }, new Color3(0.8, 0.035, 0.025), material, xSign * width * 0.28, height * 0.08, -length / 2 + 0.04));
+    for (const front of [true, false]) {
+      const layout = vehicleLightLayout(width, length, height, xSign, front);
+      parts.push(coloredBox(scene, `${name}-${front ? "headlight" : "taillight"}-${xSign}`, layout,
+        front ? new Color3(1, 0.94, 0.68) : new Color3(...TAILLIGHT_COLOR),
+        material, layout.x, layout.y, layout.z));
+    }
   }
 
   parts.push(coloredBox(scene, `${name}-front-bumper`, {

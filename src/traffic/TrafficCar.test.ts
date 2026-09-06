@@ -13,7 +13,9 @@ import {
   shouldStartPursuitUTurn,
   trafficSignalSpeedLimit,
   TrafficCar,
+  turnSignalForDirections,
 } from "./TrafficCar";
+import { TrafficTurnSignals } from "./TrafficTurnSignals";
 
 function sequenceRandom(values: number[]): () => number {
   let index = 0;
@@ -50,6 +52,7 @@ function createCarFixture(
   );
   return {
     car,
+    scene,
     dispose: () => {
       car.dispose();
       prototype.dispose();
@@ -61,6 +64,78 @@ function createCarFixture(
 }
 
 describe("TrafficCar", () => {
+  it("classifies signals for all headings, including leftward U-turns", () => {
+    const headings = ["north", "west", "south", "east"] as const;
+    headings.forEach((heading, i) => {
+      expect(turnSignalForDirections(heading, heading)).toBe("off");
+      expect(turnSignalForDirections(heading, headings[(i + 1) % 4])).toBe("right");
+      expect(turnSignalForDirections(heading, headings[(i + 3) % 4])).toBe("left");
+      expect(turnSignalForDirections(heading, headings[(i + 2) % 4])).toBe("left");
+    });
+  });
+
+  it("signals ahead of the turn, through a red light and turn, then cancels", () => {
+    const f = createCarFixture(35, sequenceRandom([0, 0.8, 0]));
+    const car = f.car;
+    car.refreshTurnSignal();
+    expect(car.turnSignal).toBe("off");
+    car.mesh.position.x = car.target.position.x - 160;
+    car.refreshTurnSignal();
+    expect(car.turnSignal).toBe("right");
+    for (let i = 0; i < 300; i++) car.update(1 / 60, [], "red");
+    expect(car.speed).toBeCloseTo(0);
+    expect(car.turnSignal).toBe("right");
+    let sawTurn = false;
+    for (let i = 0; i < 1200; i++) {
+      car.update(1 / 60, []);
+      car.refreshTurnSignal();
+      if (car.isTurning) {
+        sawTurn = true;
+        expect(car.turnSignal).toBe("right");
+      } else if (sawTurn) break;
+    }
+    expect(sawTurn).toBe(true);
+    expect(car.isTurning).toBe(false);
+    expect(car.turnSignal).toBe("off");
+    f.dispose();
+  });
+
+  it("blinks independently of movement and resets after recycling and accidents", () => {
+    const f = createCarFixture(35, sequenceRandom([0, 0.8, 0]));
+    f.car.mesh.setEnabled(true);
+    f.car.mesh.position.x = f.car.target.position.x - 150;
+    const signals = new TrafficTurnSignals(f.scene, [f.car]);
+    const activeLamp = f.scene.getMeshByName("npc-right-signal-1")!;
+    const inactiveLamp = f.scene.getMeshByName("npc-left-signal-1")!;
+    signals.update(0);
+    expect(activeLamp.isEnabled()).toBe(true);
+    expect(inactiveLamp.isEnabled()).toBe(false);
+    signals.update(0.41);
+    expect(activeLamp.isEnabled()).toBe(false);
+    signals.update(0.4);
+    expect(activeLamp.isEnabled()).toBe(true);
+    f.car.registerCollision(2, 0.1, true);
+    signals.update(0);
+    expect(activeLamp.isEnabled()).toBe(false);
+    f.car.respawn({ position: new Vector3(0, 1, 1000), ix: 0, iz: 1 }, "east", 0);
+    signals.update(0);
+    expect(f.car.turnSignal).toBe("off");
+    expect(activeLamp.isEnabled()).toBe(false);
+    signals.dispose();
+    expect(f.scene.getMeshByName("npc-left-signal")).toBeNull();
+    f.dispose();
+  });
+
+  it("suppresses patrolling police signals during pursuit", () => {
+    const f = createCarFixture(35, sequenceRandom([0, 0.8, 0]), "police");
+    f.car.mesh.position.x = f.car.target.position.x - 150;
+    f.car.refreshTurnSignal();
+    expect(f.car.turnSignal).toBe("right");
+    f.car.setPursuitTarget({ x: 1500, z: 1000 });
+    f.car.refreshTurnSignal();
+    expect(f.car.turnSignal).toBe("off");
+    f.dispose();
+  });
   it("calculates safe red-light braking and commits through a yellow when too close to stop", () => {
     const stopCenterDistance = GAME_CONFIG.world.roadWidth / 2
       + GAME_CONFIG.trafficSignals.stopLineSetback
